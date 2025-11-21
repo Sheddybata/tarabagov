@@ -564,7 +564,7 @@ export default function AdminLandServicesPage() {
               </section>
 
               <section className="space-y-2">
-                <p aclassName="text-sm font-semibold text-gray-800">Workflow</p>
+                <p className="text-sm font-semibold text-gray-800">Workflow</p>
                 <div className="grid grid-cols-2 gap-2">
                   <Button variant="outline" onClick={() => handleAdvance([activeRequest.id])}>
                     <RefreshCcw className="mr-2 h-4 w-4" />

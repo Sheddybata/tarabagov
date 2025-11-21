@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Calendar, Clock, ArrowRight, Tag } from "lucide-react";
+import { Calendar, Clock, ArrowRight, Tag, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 

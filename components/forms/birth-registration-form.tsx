@@ -31,8 +31,11 @@ const parentDetailsSchema = z.object({
 
 // Step 3: Document Upload Schema
 const documentSchema = z.object({
-  hospitalNotification: z.instanceof(FileList).refine(
-    (files) => files.length > 0,
+  hospitalNotification: z.any().refine(
+    (files) => {
+      if (typeof FileList === 'undefined') return true; // Skip validation during SSR
+      return files instanceof FileList && files.length > 0;
+    },
     "Hospital Notification of Birth is required"
   ),
 });
@@ -505,7 +508,7 @@ export function BirthRegistrationForm() {
               {errors.hospitalNotification && (
                 <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
                   <AlertCircle className="h-4 w-4" />
-                  {errors.hospitalNotification.message}
+                  {errors.hospitalNotification?.message as string}
                 </p>
               )}
             </div>

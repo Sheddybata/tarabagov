@@ -10,7 +10,7 @@ import {
   Upload, 
   AlertCircle, 
   CheckCircle2, 
-  Road, 
+  Navigation, 
   Droplet, 
   Heart, 
   GraduationCap,
@@ -53,10 +53,10 @@ const reportSchema = z.object({
     lng: z.number(),
     address: z.string().optional(),
   }),
-  photo: z.instanceof(FileList).optional(),
+  photo: z.any().optional(),
 }).refine(
   (data) => {
-    if (data.photo && data.photo.length > 0) {
+    if (data.photo && typeof FileList !== 'undefined' && data.photo instanceof FileList && data.photo.length > 0) {
       const file = data.photo[0];
       return file.size <= MAX_FILE_SIZE;
     }
@@ -71,7 +71,7 @@ const reportSchema = z.object({
 type ReportFormValues = z.infer<typeof reportSchema>;
 
 const categoryIcons = {
-  Roads: Road,
+  Roads: Navigation,
   Water: Droplet,
   Health: Heart,
   Schools: GraduationCap,
@@ -473,13 +473,21 @@ export function ReportIssueForm() {
                 </div>
                 <input
                   id="photo"
-                  ref={fileInputRef}
                   type="file"
                   accept="image/png,image/jpeg,image/jpg,image/gif"
                   {...register("photo")}
                   onChange={(e) => {
                     handlePhotoChange(e);
                     register("photo").onChange(e);
+                  }}
+                  ref={(e) => {
+                    if (e) {
+                      (fileInputRef as React.MutableRefObject<HTMLInputElement | null>).current = e;
+                      const { ref } = register("photo");
+                      if (typeof ref === "function") {
+                        ref(e);
+                      }
+                    }
                   }}
                   className="hidden"
                 />

@@ -1,3 +1,5 @@
+"use client";
+
 import { TopHeader } from "@/components/landing/top-header";
 import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";

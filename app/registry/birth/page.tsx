@@ -3,6 +3,8 @@ import { TopHeader } from "@/components/landing/top-header";
 import { Navbar } from "@/components/landing/navbar";
 import { Footer } from "@/components/landing/footer";
 
+export const dynamic = 'force-dynamic';
+
 export default function BirthRegistrationPage() {
   return (
     <div className="min-h-screen bg-gray-50">
