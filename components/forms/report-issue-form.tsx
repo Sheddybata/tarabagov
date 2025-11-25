@@ -191,38 +191,52 @@ export function ReportIssueForm() {
     setSubmitSuccess(false);
 
     try {
-      // Generate reference ID once and store it
-      const refId = `TS-${Date.now().toString().slice(-6)}`;
-      setReferenceId(refId);
+      // Validate location
+      if (data.location.lat === 0 || data.location.lng === 0) {
+        setLocationError("Please capture your location before submitting");
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Create payload
+      const payload = {
+        category: data.category,
+        description: data.description,
+        phone: data.phone || null,
+        email: data.email || null,
+        location: {
+          lat: data.location.lat,
+          lng: data.location.lng,
+        },
+        address: data.location.address || null,
+        lga: data.location.address ? extractLGA(data.location.address) : null,
+      };
 
       // Create FormData for file upload
       const formData = new FormData();
-      formData.append("category", data.category);
-      formData.append("description", data.description);
-      formData.append("phone", data.phone || "");
-      formData.append("email", data.email || "");
-      formData.append("latitude", data.location.lat.toString());
-      formData.append("longitude", data.location.lng.toString());
-      formData.append("address", data.location.address || "");
+      formData.append("payload", JSON.stringify(payload));
 
       if (data.photo && data.photo.length > 0) {
         formData.append("photo", data.photo[0]);
       }
 
-      // TODO: Replace with actual API call to Supabase
-      console.log("Submitting report:", {
-        referenceId: refId,
-        category: data.category,
-        description: data.description,
-        phone: data.phone,
-        email: data.email,
-        location: data.location,
-        photo: data.photo?.[0]?.name,
+      // Submit to API
+      console.log("🔵 Submitting report to /api/report");
+      const response = await fetch("/api/report", {
+        method: "POST",
+        body: formData,
       });
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      console.log("🔵 Response status:", response.status);
+      const result = await response.json();
+      console.log("🔵 Response data:", result);
 
+      if (!response.ok) {
+        console.error("🔴 API Error:", result);
+        throw new Error(result.error || result.details || "Failed to submit report");
+      }
+
+      setReferenceId(result.referenceId);
       setSubmitSuccess(true);
       setIsSubmitting(false);
 
@@ -245,11 +259,32 @@ export function ReportIssueForm() {
           fileInputRef.current.value = "";
         }
       }, 5000);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting report:", error);
+      const errorMessage = error.message || "Failed to submit report. Please try again.";
+      setLocationError(errorMessage);
       setIsSubmitting(false);
       setReferenceId(null);
+      
+      // Show user-friendly error
+      alert(`Error: ${errorMessage}\n\nPlease check:\n1. Your internet connection\n2. All required fields are filled\n3. Try again in a moment`);
     }
+  };
+
+  // Helper function to extract LGA from address (simple implementation)
+  const extractLGA = (address: string): string | null => {
+    const lgas = [
+      "Jalingo", "Wukari", "Takum", "Sardauna", "Gashaka", "Bali", "Donga",
+      "Ibi", "Karim Lamido", "Lau", "Yorro", "Zing", "Ardo Kola", "Gassol",
+      "Kurmi", "Ussa", "Wukari", "Gashaka", "Sardauna"
+    ];
+    const addressUpper = address.toUpperCase();
+    for (const lga of lgas) {
+      if (addressUpper.includes(lga.toUpperCase())) {
+        return lga;
+      }
+    }
+    return null;
   };
 
   if (submitSuccess && referenceId) {

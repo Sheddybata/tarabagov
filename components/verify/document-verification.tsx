@@ -17,37 +17,71 @@ export function DocumentVerification() {
   } | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  const handleVerify = () => {
-    if (!documentType || !documentNumber) {
+  const [applicantName, setApplicantName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [referenceId, setReferenceId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleVerify = async () => {
+    if (!documentType || !documentNumber || !applicantName) {
       setVerificationResult({
         valid: false,
         message: "Please fill in all required fields",
       });
+      setError("Document type, number, and applicant name are required");
       return;
     }
 
     setIsVerifying(true);
-    // Simulate API call
-    setTimeout(() => {
-      // Mock verification - will be replaced with actual API call
-      const isValid = documentNumber.length >= 8;
-      setVerificationResult({
-        valid: isValid,
-        message: isValid
-          ? "Document verified successfully"
-          : "Document not found or invalid",
-        details: isValid
-          ? {
-              documentType,
-              documentNumber,
-              issueDate: "2024-01-15",
-              expiryDate: "2025-01-15",
-              status: "Active",
-            }
-          : undefined,
+    setError(null);
+    setVerificationResult(null);
+
+    try {
+      const payload = {
+        document_type: documentType,
+        document_number: documentNumber,
+        applicant_name: applicantName,
+        phone: phone || null,
+        email: email || null,
+      };
+
+      const formData = new FormData();
+      formData.append("payload", JSON.stringify(payload));
+
+      const response = await fetch("/api/document-verifications", {
+        method: "POST",
+        body: formData,
       });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to submit verification request");
+      }
+
+      setReferenceId(result.referenceId);
+      setSubmitSuccess(true);
+      setVerificationResult({
+        valid: true,
+        message: "Verification request submitted successfully. Your request is being processed.",
+        details: {
+          documentType,
+          documentNumber,
+          referenceId: result.referenceId,
+          status: "Pending Review",
+        },
+      });
+    } catch (err: any) {
+      setError(err.message || "Failed to submit verification request");
+      setVerificationResult({
+        valid: false,
+        message: err.message || "Failed to submit verification request",
+      });
+    } finally {
       setIsVerifying(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -59,29 +93,37 @@ export function DocumentVerification() {
             <p className="text-gray-600">Enter document details to verify authenticity</p>
           </div>
 
+          {error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+              <p className="text-sm text-red-600">{error}</p>
+            </div>
+          )}
+
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <Label htmlFor="documentType">Document Type</Label>
+              <Label htmlFor="documentType">Document Type <span className="text-red-500">*</span></Label>
               <Select
                 id="documentType"
                 value={documentType}
                 onChange={(e) => {
                   setDocumentType(e.target.value);
                   setVerificationResult(null);
+                  setError(null);
                 }}
+                required
               >
                 <option value="">Select document type</option>
-                <option value="birth">Birth Certificate</option>
-                <option value="land">Land Title/Certificate</option>
-                <option value="tax">Tax Clearance Certificate</option>
-                <option value="business">Business Registration</option>
-                <option value="education">Educational Certificate</option>
-                <option value="identity">Identity Card</option>
+                <option value="birth_certificate">Birth Certificate</option>
+                <option value="land_title">Land Title/Certificate</option>
+                <option value="tax_clearance">Tax Clearance Certificate</option>
+                <option value="business_registration">Business Registration</option>
+                <option value="educational_certificate">Educational Certificate</option>
+                <option value="identity_card">Identity Card</option>
               </Select>
             </div>
 
             <div>
-              <Label htmlFor="documentNumber">Document Number</Label>
+              <Label htmlFor="documentNumber">Document Number <span className="text-red-500">*</span></Label>
               <Input
                 id="documentNumber"
                 placeholder="Enter document number"
@@ -89,6 +131,54 @@ export function DocumentVerification() {
                 onChange={(e) => {
                   setDocumentNumber(e.target.value);
                   setVerificationResult(null);
+                  setError(null);
+                }}
+                required
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <Label htmlFor="applicantName">Applicant Name <span className="text-red-500">*</span></Label>
+              <Input
+                id="applicantName"
+                placeholder="Enter your full name"
+                value={applicantName}
+                onChange={(e) => {
+                  setApplicantName(e.target.value);
+                  setVerificationResult(null);
+                  setError(null);
+                }}
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="phone">Phone Number (Optional)</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="08021782214"
+                value={phone}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  setVerificationResult(null);
+                  setError(null);
+                }}
+                maxLength={11}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="email">Email Address (Optional)</Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="your.email@example.com"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setVerificationResult(null);
+                  setError(null);
                 }}
               />
             </div>

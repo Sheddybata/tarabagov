@@ -14,6 +14,10 @@ import {
   Settings,
   Database,
   Globe,
+  Download,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +58,13 @@ export default function AdminSettingsPage() {
     sessionTimeout: "30",
   });
 
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState<{
+    success: boolean;
+    message?: string;
+    results?: any;
+  } | null>(null);
+
   const handleProfileUpdate = () => {
     // Simulate save
     window.alert("Profile updated successfully!");
@@ -83,6 +94,47 @@ export default function AdminSettingsPage() {
 
   const handleSystemSave = () => {
     window.alert("System settings saved!");
+  };
+
+  const handleSeedDatabase = async () => {
+    if (!confirm("This will seed the database with initial data (schools, hospitals, MDAs). Continue?")) {
+      return;
+    }
+
+    setSeeding(true);
+    setSeedResult(null);
+
+    try {
+      const response = await fetch("/api/seed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSeedResult({
+          success: true,
+          message: data.message,
+          results: data.results,
+        });
+      } else {
+        setSeedResult({
+          success: false,
+          message: data.error || "Failed to seed database",
+        });
+      }
+    } catch (error: any) {
+      setSeedResult({
+        success: false,
+        message: error.message || "An error occurred while seeding",
+      });
+    } finally {
+      setSeeding(false);
+    }
   };
 
   const tabs = [
@@ -546,6 +598,101 @@ export default function AdminSettingsPage() {
                   Save System Settings
                 </Button>
               </div>
+            </div>
+          </div>
+
+          {/* Database Seeding */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Database Seeding</h2>
+              <p className="text-sm text-gray-600">
+                Populate the database with initial data (schools, hospitals, MDAs)
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-900 mb-2">
+                  <strong>What will be seeded:</strong>
+                </p>
+                <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+                  <li>25 Schools (Universities, Colleges, Polytechnics, Secondary)</li>
+                  <li>6 Hospitals (General, Specialist, Clinics)</li>
+                  <li>13 MDAs (Ministries, Departments, Agencies)</li>
+                </ul>
+                <p className="text-xs text-blue-600 mt-3">
+                  Note: This operation is idempotent. Running it multiple times won't create duplicates.
+                </p>
+              </div>
+
+              {seedResult && (
+                <div
+                  className={`rounded-lg p-4 border ${
+                    seedResult.success
+                      ? "bg-green-50 border-green-200"
+                      : "bg-red-50 border-red-200"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    {seedResult.success ? (
+                      <CheckCircle className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <p
+                        className={`font-medium ${
+                          seedResult.success ? "text-green-900" : "text-red-900"
+                        }`}
+                      >
+                        {seedResult.success ? "Seeding Completed" : "Seeding Failed"}
+                      </p>
+                      <p
+                        className={`text-sm mt-1 ${
+                          seedResult.success ? "text-green-800" : "text-red-800"
+                        }`}
+                      >
+                        {seedResult.message}
+                      </p>
+                      {seedResult.success && seedResult.results && (
+                        <div className="mt-3 text-xs text-green-700 space-y-1">
+                          <p>
+                            Schools: {seedResult.results.schools.inserted}/
+                            {seedResult.results.schools.total} inserted
+                          </p>
+                          <p>
+                            Hospitals: {seedResult.results.hospitals.inserted}/
+                            {seedResult.results.hospitals.total} inserted
+                          </p>
+                          <p>
+                            MDAs: {seedResult.results.mdas.inserted}/
+                            {seedResult.results.mdas.total} inserted
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Button
+                onClick={handleSeedDatabase}
+                disabled={seeding}
+                className="flex items-center gap-2"
+                variant="outline"
+              >
+                {seeding ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Seeding Database...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4" />
+                    Seed Database
+                  </>
+                )}
+              </Button>
             </div>
           </div>
 

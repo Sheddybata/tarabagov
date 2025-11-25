@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   AlertCircle,
   Bell,
@@ -15,11 +15,13 @@ import {
   RefreshCcw,
   Search,
   X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getAllReports, updateReport, addReportNote, getReportNotes } from "@/lib/supabase/reports";
 
 type ReportStatus = "pending" | "in_progress" | "resolved";
 type ReportCategory =
@@ -60,67 +62,25 @@ const categoryOptions: ReportCategory[] = [
   "Housing",
 ];
 
-const initialReports: Report[] = [
-  {
-    id: "1",
-    reference: "TS-892341",
-    citizenName: "Rahman Yusuf",
-    phoneNumber: "0803 456 7890",
-    email: "rahman.yusuf@example.com",
-    category: "Roads",
-    status: "pending",
-    lga: "Jalingo",
-    submittedAt: "2024-11-10T08:30:00Z",
-    description:
-      "Please provide a detailed description of the issue... Large pothole along Wukari Road opposite the central market causing vehicles to swerve into incoming traffic.",
-    notes: [],
-    address: "Wukari Road, Central Market Junction",
-  },
-  {
-    id: "2",
-    reference: "TS-892340",
-    citizenName: "Ruth Terkuma",
-    phoneNumber: "0802 178 2214",
-    email: "ruth.terkuma@example.com",
-    category: "Water",
-    status: "in_progress",
-    lga: "Takum",
-    submittedAt: "2024-11-09T14:10:00Z",
-    description: "Burst water pipe flooding the market square.",
-    dueDate: "2024-11-15",
-    notes: ["Assigned to Water Board Technical Team."],
-    address: "Takum New Market Square",
-  },
-  {
-    id: "3",
-    reference: "TS-892339",
-    citizenName: "Ibrahim Sadiq",
-    phoneNumber: "0805 112 9988",
-    email: "ibrahim.sadiq@example.com",
-    category: "Electricity",
-    status: "pending",
-    lga: "Bali",
-    submittedAt: "2024-11-08T10:05:00Z",
-    description: "Transformer failure leading to 3-day blackout.",
-    notes: [],
-    address: "Kofar Fada district, Bali",
-  },
-  {
-    id: "4",
-    reference: "TS-892338",
-    citizenName: "Favour Amos",
-    phoneNumber: "0810 778 3422",
-    email: "favour.amos@example.com",
-    category: "Health",
-    status: "resolved",
-    lga: "Gassol",
-    submittedAt: "2024-11-07T09:15:00Z",
-    description: "Shortage of vaccines at primary health center.",
-    dueDate: "2024-11-09",
-    notes: ["Supplies delivered and acknowledged."],
-    address: "Primary Health Center, Mutum Biyu",
-  },
-];
+// Helper function to map Supabase data to Report interface
+function mapSupabaseToReport(supabaseReport: any, notes: any[] = []): Report {
+  return {
+    id: supabaseReport.id,
+    reference: supabaseReport.reference_id || "",
+    citizenName: "Citizen", // Reports don't have citizen name, using placeholder
+    phoneNumber: supabaseReport.contact_phone || undefined,
+    email: supabaseReport.contact_email || undefined,
+    category: supabaseReport.category as ReportCategory,
+    status: (supabaseReport.status || "pending") as ReportStatus,
+    lga: supabaseReport.lga || "Unknown",
+    submittedAt: supabaseReport.created_at || new Date().toISOString(),
+    description: supabaseReport.description || "",
+    dueDate: supabaseReport.due_date || undefined,
+    isEscalated: supabaseReport.is_escalated || false,
+    notes: notes.map((n) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+    address: supabaseReport.location_address || undefined,
+  };
+}
 
 const statusConfig: Record<
   ReportStatus,
@@ -144,7 +104,9 @@ const statusConfig: Record<
 };
 
 export default function AdminReportsPage() {
-  const [reports, setReports] = useState<Report[]>(initialReports);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<ReportStatus | "">("");
@@ -154,6 +116,43 @@ export default function AdminReportsPage() {
     direction: "asc" | "desc";
   }>({ field: "submittedAt", direction: "desc" });
   const [activeReport, setActiveReport] = useState<Report | null>(null);
+  const [loadingNotes, setLoadingNotes] = useState<string | null>(null);
+
+  // Fetch reports from Supabase
+  useEffect(() => {
+    async function fetchReports() {
+      try {
+        setLoading(true);
+        setError(null);
+        const { data, error: fetchError } = await getAllReports({
+          status: statusFilter || undefined,
+          category: categoryFilter || undefined,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          console.error("❌ Error fetching reports:", fetchError);
+          throw fetchError;
+        }
+
+        console.log("✅ Reports fetched:", data?.length || 0, "reports");
+        
+        // Map Supabase data to Report interface
+        const mappedReports = (data || []).map((report: any) => mapSupabaseToReport(report));
+        console.log("✅ Mapped reports:", mappedReports.length);
+        setReports(mappedReports);
+      } catch (err: any) {
+        console.error("❌ Error fetching reports:", err);
+        setError(err.message || "Failed to load reports");
+        // Show error in UI
+        alert(`Error loading reports: ${err.message}\n\nCheck:\n1. You are logged in as admin\n2. RLS policy allows SELECT for admins\n3. Browser console for details`);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchReports();
+  }, [statusFilter, categoryFilter, searchTerm]);
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -206,8 +205,23 @@ export default function AdminReportsPage() {
     );
   };
 
-  const openReportDetails = (report: Report) => {
+  const openReportDetails = async (report: Report) => {
     setActiveReport(report);
+    // Fetch notes for this report
+    try {
+      setLoadingNotes(report.id);
+      const { data: notes, error: notesError } = await getReportNotes(report.id);
+      if (!notesError && notes) {
+        setActiveReport({
+          ...report,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching notes:", err);
+    } finally {
+      setLoadingNotes(null);
+    }
   };
 
   const closeReportDetails = () => {
@@ -222,44 +236,109 @@ export default function AdminReportsPage() {
     }
   };
 
-  const updateReports = (ids: string[], updater: (report: Report) => Report) => {
-    setReports((prev) =>
-      prev.map((report) =>
-        ids.includes(report.id) ? updater(report) : report
-      )
-    );
+  const handleAdvanceStatus = async (ids: string[]) => {
+    for (const id of ids) {
+      const report = reports.find((r) => r.id === id);
+      if (!report) continue;
+      const nextStatus = statusConfig[report.status].next;
+      try {
+        const { error } = await updateReport(id, { status: nextStatus });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating report ${id}:`, err);
+        alert(`Failed to update report ${report.reference}`);
+        return;
+      }
+    }
+    // Refresh reports
+    const { data, error } = await getAllReports({
+      status: statusFilter || undefined,
+      category: categoryFilter || undefined,
+      search: searchTerm || undefined,
+    });
+    if (!error && data) {
+      setReports(data.map((r: any) => mapSupabaseToReport(r)));
+    }
   };
 
-  const handleAdvanceStatus = (ids: string[]) => {
-    updateReports(ids, (report) => ({
-      ...report,
-      status: statusConfig[report.status].next,
-    }));
-  };
-
-  const handleAddNote = (ids: string[]) => {
+  const handleAddNote = async (ids: string[]) => {
     const note = window.prompt("Add follow-up note:");
     if (!note) return;
-    updateReports(ids, (report) => ({
-      ...report,
-      notes: [...report.notes, `${new Date().toLocaleString()}: ${note}`],
-    }));
+    for (const id of ids) {
+      try {
+        const { error } = await addReportNote(id, note);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to report ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    // Refresh active report if it's one of the updated ones
+    if (activeReport && ids.includes(activeReport.id)) {
+      const { data: notes } = await getReportNotes(activeReport.id);
+      if (notes) {
+        setActiveReport({
+          ...activeReport,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    }
+    // Refresh reports
+    const { data, error } = await getAllReports({
+      status: statusFilter || undefined,
+      category: categoryFilter || undefined,
+      search: searchTerm || undefined,
+    });
+    if (!error && data) {
+      setReports(data.map((r: any) => mapSupabaseToReport(r)));
+    }
   };
 
-  const handleSetDueDate = (ids: string[]) => {
+  const handleSetDueDate = async (ids: string[]) => {
     const date = window.prompt("Set due date (YYYY-MM-DD):");
     if (!date) return;
-    updateReports(ids, (report) => ({
-      ...report,
-      dueDate: date,
-    }));
+    for (const id of ids) {
+      try {
+        const { error } = await updateReport(id, { due_date: date });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error setting due date for report ${id}:`, err);
+        alert("Failed to set due date");
+        return;
+      }
+    }
+    // Refresh reports
+    const { data, error } = await getAllReports({
+      status: statusFilter || undefined,
+      category: categoryFilter || undefined,
+      search: searchTerm || undefined,
+    });
+    if (!error && data) {
+      setReports(data.map((r: any) => mapSupabaseToReport(r)));
+    }
   };
 
-  const handleEscalate = (ids: string[]) => {
-    updateReports(ids, (report) => ({
-      ...report,
-      isEscalated: true,
-    }));
+  const handleEscalate = async (ids: string[]) => {
+    for (const id of ids) {
+      try {
+        const { error } = await updateReport(id, { is_escalated: true });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error escalating report ${id}:`, err);
+        alert("Failed to escalate report");
+        return;
+      }
+    }
+    // Refresh reports
+    const { data, error } = await getAllReports({
+      status: statusFilter || undefined,
+      category: categoryFilter || undefined,
+      search: searchTerm || undefined,
+    });
+    if (!error && data) {
+      setReports(data.map((r: any) => mapSupabaseToReport(r)));
+    }
   };
 
   const handleNotify = (ids: string[]) => {
@@ -291,6 +370,36 @@ export default function AdminReportsPage() {
   };
 
   const selectionDisabled = selectedReports.length === 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading reports...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertCircle className="h-5 w-5" />
+          <p className="font-semibold">Error loading reports</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button
+          onClick={() => window.location.reload()}
+          className="mt-4"
+          variant="outline"
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>

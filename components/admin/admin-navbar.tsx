@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Logo } from "@/components/landing/logo";
+import { createClient } from "@/lib/supabase/client";
 import {
   LayoutDashboard,
   AlertCircle,
@@ -47,12 +48,17 @@ export function AdminNavbar({ isMobileOpen, onClose }: AdminNavbarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const handleLogout = async () => {
-    // TEMPORARY: Simple logout - remove when Supabase is set up
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("admin_session");
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      router.push("/admin/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout error:", error);
+      // Still redirect even if signOut fails
+      router.push("/admin/login");
+      router.refresh();
     }
-    router.push("/admin/login");
-    router.refresh();
   };
 
   const handleNavClick = (href: string) => {

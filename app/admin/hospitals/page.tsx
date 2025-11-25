@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -19,11 +19,13 @@ import {
   ShieldCheck,
   Users,
   X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getAllHospitals, upsertHospital, deleteHospital } from "@/lib/supabase/hospitals";
 
 type FacilityLevel = "Primary Health Centre" | "General Hospital" | "Specialist Hospital" | "Private Clinic";
 type FacilityOwnership = "Public" | "Private" | "Mission";
@@ -55,83 +57,60 @@ const statusClasses: Record<FacilityStatus, string> = {
   Suspended: "bg-red-100 text-red-700",
 };
 
-const initialHospitals: Hospital[] = [
-  {
-    id: "1",
-    name: "Federal Medical Centre, Jalingo",
-    level: "Specialist Hospital",
-    ownership: "Public",
-    lga: "Jalingo",
-    address: "No. 1 Hospital Road, Jalingo",
-    contactPerson: "Dr. Hadiza Musa",
-    phone: "0805 667 8899",
-    email: "info@fmcjalingo.gov.ng",
-    bedCapacity: 350,
-    icuBeds: 18,
-    ambulanceCount: 6,
-    lastInspection: "2024-08-12",
-    nextInspection: "2025-02-15",
-    services: ["Emergency", "Maternity", "Surgery", "Dialysis"],
-    status: "Operational",
-    notes: ["New oncology wing commissioned Aug 2024."],
-  },
-  {
-    id: "2",
-    name: "Takum General Hospital",
-    level: "General Hospital",
-    ownership: "Public",
-    lga: "Takum",
-    address: "Opp. Central Market, Takum",
-    contactPerson: "Dr. Bala Chukwu",
-    phone: "0803 441 2277",
-    bedCapacity: 120,
-    icuBeds: 4,
-    ambulanceCount: 2,
-    lastInspection: "2024-06-05",
-    services: ["Emergency", "Maternity", "Laboratory"],
-    status: "Pending Inspection",
-    notes: ["Lab equipment upgrade pending verification."],
-  },
-  {
-    id: "3",
-    name: "Sacred Heart Mission Clinic",
-    level: "Private Clinic",
-    ownership: "Mission",
-    lga: "Wukari",
-    address: "No. 12 Mission Road, Wukari",
-    contactPerson: "Sr. Mary Uche",
-    phone: "0810 334 5566",
-    email: "info@sacredheartclinic.org",
-    bedCapacity: 45,
-    icuBeds: 0,
-    ambulanceCount: 1,
-    lastInspection: "2024-03-28",
-    services: ["Maternity", "Immunization"],
-    status: "Operational",
-    notes: ["Approved for expanded antenatal services."],
-  },
-  {
-    id: "4",
-    name: "Royal Crest Medical Centre",
-    level: "Private Clinic",
-    ownership: "Private",
-    lga: "Karim Lamido",
-    address: "Plot 8 Medical Lane, Karim Lamido",
-    contactPerson: "Dr. Richard Tumba",
-    phone: "0809 112 3344",
-    email: "admin@royalcrestmedical.com",
-    bedCapacity: 60,
-    icuBeds: 2,
-    ambulanceCount: 1,
-    lastInspection: "2024-09-01",
-    services: ["Emergency", "Diagnostics", "Surgery"],
-    status: "Suspended",
-    notes: ["Suspended for incomplete emergency unit. Works ongoing."],
-  },
-];
+// Helper function to map Supabase data to Hospital interface
+function mapSupabaseToHospital(supabaseData: any): Hospital {
+  // Map status
+  let status: FacilityStatus = "Pending Inspection";
+  const dbStatus = supabaseData.status || supabaseData.accreditation_status;
+  if (dbStatus === "Operational" || dbStatus === "operational" || dbStatus === "Active") status = "Operational";
+  else if (dbStatus === "Suspended" || dbStatus === "suspended") status = "Suspended";
+  else status = "Pending Inspection";
+
+  // Parse services from string or array
+  let services: string[] = [];
+  if (supabaseData.specialties) {
+    if (typeof supabaseData.specialties === "string") {
+      services = supabaseData.specialties.split(",").map((s: string) => s.trim()).filter((s: string) => s);
+    } else if (Array.isArray(supabaseData.specialties)) {
+      services = supabaseData.specialties;
+    }
+  }
+
+  // Parse notes
+  let notes: string[] = [];
+  if (supabaseData.notes) {
+    if (typeof supabaseData.notes === "string") {
+      notes = supabaseData.notes.split("\n").filter((n: string) => n.trim());
+    } else if (Array.isArray(supabaseData.notes)) {
+      notes = supabaseData.notes;
+    }
+  }
+
+  return {
+    id: supabaseData.id,
+    name: supabaseData.name || "",
+    level: (supabaseData.level || "General Hospital") as FacilityLevel,
+    ownership: (supabaseData.ownership || "Public") as FacilityOwnership,
+    lga: supabaseData.lga || "Unknown",
+    address: supabaseData.address || "",
+    contactPerson: "N/A", // Not stored in DB
+    phone: supabaseData.phone || undefined,
+    email: supabaseData.email || undefined,
+    bedCapacity: supabaseData.bed_capacity || 0,
+    icuBeds: supabaseData.icu_beds || 0,
+    ambulanceCount: supabaseData.ambulance_count || 0,
+    lastInspection: supabaseData.last_inspection_date || undefined,
+    nextInspection: supabaseData.next_inspection_date || undefined,
+    services,
+    status,
+    notes,
+  };
+}
 
 export default function AdminHospitalsPage() {
-  const [hospitals, setHospitals] = useState<Hospital[]>(initialHospitals);
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilter, setLevelFilter] = useState<FacilityLevel | "">("");
   const [ownershipFilter, setOwnershipFilter] = useState<FacilityOwnership | "">("");
@@ -150,6 +129,52 @@ export default function AdminHospitalsPage() {
     services: [],
     notes: [],
   });
+  const [saving, setSaving] = useState(false);
+
+  // Fetch hospitals from Supabase
+  useEffect(() => {
+    async function fetchHospitals() {
+      try {
+        setLoading(true);
+        setError(null);
+        const { data, error: fetchError } = await getAllHospitals({
+          level: levelFilter || undefined,
+          ownership: ownershipFilter || undefined,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to Hospital interface
+        const mappedHospitals = (data || []).map((hospital: any) => mapSupabaseToHospital(hospital));
+        setHospitals(mappedHospitals);
+      } catch (err: any) {
+        console.error("Error fetching hospitals:", err);
+        setError(err.message || "Failed to load hospitals");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchHospitals();
+  }, [levelFilter, ownershipFilter, searchTerm]);
+
+  const refreshData = async () => {
+    try {
+      const { data, error: fetchError } = await getAllHospitals({
+        level: levelFilter || undefined,
+        ownership: ownershipFilter || undefined,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setHospitals(data.map((hospital: any) => mapSupabaseToHospital(hospital)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const filteredHospitals = useMemo(() => {
     return hospitals.filter((hospital) => {
@@ -261,41 +286,81 @@ export default function AdminHospitalsPage() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSave = () => {
-    if (!formState.name || !formState.lga || !formState.contactPerson) {
-      window.alert("Please fill in required fields (name, LGA, contact).");
+  const handleSave = async () => {
+    if (!formState.name || !formState.lga) {
+      window.alert("Please fill in required fields (name, LGA).");
       return;
     }
 
-    if (isEditing && formState.id) {
-      setHospitals((prev) =>
-        prev.map((hospital) => (hospital.id === formState.id ? (formState as Hospital) : hospital))
-      );
-    } else {
-      const newHospital: Hospital = {
-        id: `hospital-${Date.now()}`,
-        name: formState.name,
-        level: (formState.level as FacilityLevel) || "General Hospital",
-        ownership: (formState.ownership as FacilityOwnership) || "Public",
-        lga: formState.lga,
-        address: formState.address || "",
-        contactPerson: formState.contactPerson,
-        phone: formState.phone,
-        email: formState.email,
-        bedCapacity: formState.bedCapacity || 0,
-        icuBeds: formState.icuBeds || 0,
-        ambulanceCount: formState.ambulanceCount || 0,
-        lastInspection: formState.lastInspection,
-        nextInspection: formState.nextInspection,
-        services: formState.services?.length ? formState.services : [],
-        status: (formState.status as FacilityStatus) || "Pending Inspection",
-        notes: formState.notes || [],
+    try {
+      setSaving(true);
+      
+      // Map UI form to Supabase format
+      const hospitalData = {
+        id: isEditing ? formState.id : undefined,
+        name: formState.name!,
+        level: formState.level!,
+        ownership: formState.ownership!,
+        lga: formState.lga!,
+        address: formState.address || undefined,
+        phone: formState.phone || undefined,
+        email: formState.email || undefined,
+        bed_capacity: formState.bedCapacity || 0,
+        icu_beds: formState.icuBeds || 0,
+        ambulance_count: formState.ambulanceCount || 0,
+        last_inspection_date: formState.lastInspection || undefined,
+        next_inspection_date: formState.nextInspection || undefined,
+        specialties: formState.services?.length ? formState.services : undefined,
+        status: formState.status || "Pending Inspection",
+        accreditation_status: formState.status || "Pending Inspection",
+        notes: formState.notes?.join("\n") || undefined,
       };
-      setHospitals((prev) => [newHospital, ...prev]);
-    }
 
-    closeForm();
+      console.log("💾 Saving hospital:", hospitalData);
+      const { data, error: saveError } = await upsertHospital(hospitalData);
+
+      if (saveError) {
+        console.error("❌ Error saving hospital:", saveError);
+        throw saveError;
+      }
+
+      console.log("✅ Hospital saved successfully:", data);
+      closeForm();
+      await refreshData();
+    } catch (err: any) {
+      console.error("❌ Error saving hospital:", err);
+      const errorMessage = err.message || "Failed to save hospital";
+      alert(`Error: ${errorMessage}\n\nCheck:\n1. You are logged in as admin\n2. RLS policy allows INSERT/UPDATE for admins\n3. Browser console for details`);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading hospitals...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertTriangle className="h-5 w-5" />
+          <p className="font-semibold">Error loading hospitals</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -834,8 +899,15 @@ export default function AdminHospitalsPage() {
                 <Button variant="ghost" onClick={closeForm}>
                   Cancel
                 </Button>
-                <Button onClick={handleSave}>
-                  {isEditing ? "Save changes" : "Add facility"}
+                <Button onClick={handleSave} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    isEditing ? "Save changes" : "Add facility"
+                  )}
                 </Button>
               </div>
             </div>

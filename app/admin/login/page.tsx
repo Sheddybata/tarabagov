@@ -1,71 +1,58 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { AlertCircle, Lock, Mail, Shield } from "lucide-react";
-
-const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(1, "Password is required"),
-});
-
-type LoginFormValues = z.infer<typeof loginSchema>;
-
-// TEMPORARY: Simple credentials - remove when Supabase is set up
-const TEMP_ADMIN_EMAIL = "admin@tarabastate.gov.ng";
-const TEMP_ADMIN_PASSWORD = "admin123";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Check if already logged in
-    if (typeof window !== "undefined") {
-      const adminSession = localStorage.getItem("admin_session");
-      if (adminSession === "authenticated") {
-        router.push("/admin/dashboard");
-      }
-    }
-  }, [router]);
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginFormValues>({
-    resolver: zodResolver(loginSchema),
-  });
-
-  const onSubmit = async (data: LoginFormValues) => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      // TEMPORARY: Simple authentication check
-      // TODO: Replace with Supabase authentication when backend is connected
-      if (data.email === TEMP_ADMIN_EMAIL && data.password === TEMP_ADMIN_PASSWORD) {
-        // Set session in localStorage
-        if (typeof window !== "undefined") {
-          localStorage.setItem("admin_session", "authenticated");
-        }
-        
-        // Redirect to admin dashboard
-        router.push("/admin/dashboard");
-        router.refresh();
-      } else {
-        setError("Invalid email or password. Use: admin@tarabastate.gov.ng / admin123");
-        setIsLoading(false);
+      // Check if Supabase is configured
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error("Supabase is not configured. Please check your environment variables.");
       }
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.");
+
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        throw new Error(authError.message || "Invalid email or password");
+      }
+
+      if (!data?.user) {
+        throw new Error("Authentication failed");
+      }
+
+      // Check if admin
+      const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+      if (adminEmail && data.user.email !== adminEmail) {
+        await supabase.auth.signOut();
+        throw new Error("Access denied. Admin privileges required.");
+      }
+
+      // Redirect to dashboard
+      window.location.href = "/admin/dashboard";
+
+    } catch (err: any) {
+      setError(err.message || "Login failed. Please try again.");
       setIsLoading(false);
     }
   };
@@ -84,7 +71,7 @@ export default function AdminLoginPage() {
 
         {/* Login Form */}
         <div className="bg-white rounded-lg shadow-xl p-8 border border-gray-200">
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
                 <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
@@ -93,64 +80,46 @@ export default function AdminLoginPage() {
             )}
 
             <div>
-              <Label htmlFor="email" className="flex items-center gap-2 mb-2">
+              <label htmlFor="email" className="flex items-center gap-2 mb-2 text-sm font-medium text-gray-700">
                 <Mail className="h-4 w-4 text-gray-500" />
                 Email Address
-              </Label>
-              <Input
+              </label>
+              <input
                 id="email"
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@tarabastate.gov.ng"
-                defaultValue={TEMP_ADMIN_EMAIL}
-                {...register("email")}
-                className="w-full"
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-taraba-green focus:border-transparent"
                 disabled={isLoading}
               />
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
-              )}
             </div>
 
             <div>
-              <Label htmlFor="password" className="flex items-center gap-2 mb-2">
+              <label htmlFor="password" className="flex items-center gap-2 mb-2 text-sm font-medium text-gray-700">
                 <Lock className="h-4 w-4 text-gray-500" />
                 Password
-              </Label>
-              <Input
+              </label>
+              <input
                 id="password"
                 type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                defaultValue={TEMP_ADMIN_PASSWORD}
-                {...register("password")}
-                className="w-full"
+                required
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-taraba-green focus:border-transparent"
                 disabled={isLoading}
               />
-              {errors.password && (
-                <p className="mt-1 text-sm text-red-600">{errors.password.message}</p>
-              )}
             </div>
 
-            {/* Temporary Login Info */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-blue-900 mb-1">Temporary Login (Development Only)</p>
-              <p className="text-xs text-blue-800">
-                Email: <strong>{TEMP_ADMIN_EMAIL}</strong>
-              </p>
-              <p className="text-xs text-blue-800">
-                Password: <strong>{TEMP_ADMIN_PASSWORD}</strong>
-              </p>
-              <p className="text-xs text-blue-600 mt-2 italic">
-                This is a temporary solution. Replace with Supabase authentication when backend is connected.
-              </p>
-            </div>
-
-            <Button
+            <button
               type="submit"
-              disabled={isLoading}
-              className="w-full bg-taraba-green hover:bg-taraba-green-dark text-white py-3 text-lg"
+              disabled={isLoading || !email || !password}
+              className="w-full bg-taraba-green hover:bg-taraba-green-dark text-white py-3 text-lg rounded-md font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-taraba-green focus:ring-offset-2"
             >
               {isLoading ? "Signing in..." : "Sign In"}
-            </Button>
+            </button>
           </form>
 
           <div className="mt-6 pt-6 border-t border-gray-200">
@@ -163,4 +132,3 @@ export default function AdminLoginPage() {
     </div>
   );
 }
-

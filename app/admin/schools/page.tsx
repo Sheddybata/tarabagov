@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Building2,
   Calendar,
@@ -16,11 +16,13 @@ import {
   Users,
   X,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { getAllSchools, upsertSchool, deleteSchool } from "@/lib/supabase/schools";
 
 type SchoolLevel = "Primary" | "Secondary" | "Tertiary";
 type Ownership = "Public" | "Private" | "Mission";
@@ -53,79 +55,48 @@ const statusClassMap: Record<AccreditationStatus, string> = {
 const getTotalEnrollment = (school: { enrollmentMale: number; enrollmentFemale: number }) =>
   (school.enrollmentMale || 0) + (school.enrollmentFemale || 0);
 
-const initialSchools: School[] = [
-  {
-    id: "1",
-    name: "Government Day Secondary School, Jalingo",
-    level: "Secondary",
-    ownership: "Public",
-    lga: "Jalingo",
-    address: "No. 15 Ishaku Aliyu Road, Jalingo",
-    contactPerson: "Mrs. Lydia Tanko",
-    phone: "0802 112 3355",
-    email: "gdss.jalingo@taraba.gov.ng",
-    enrollmentMale: 640,
-    enrollmentFemale: 655,
-    lastInspection: "2024-09-15",
-    status: "Accredited",
-    boarding: false,
-    notes: ["Next inspection due March 2025."],
-  },
-  {
-    id: "2",
-    name: "Sacred Heart Primary School, Wukari",
-    level: "Primary",
-    ownership: "Mission",
-    lga: "Wukari",
-    address: "Opp. St. Charles Catholic Church, Wukari",
-    contactPerson: "Rev. Fr. John Musa",
-    phone: "0805 778 2214",
-    email: "admin@sacredheartwukari.org",
-    enrollmentMale: 250,
-    enrollmentFemale: 230,
-    lastInspection: "2024-07-22",
-    status: "Accredited",
-    boarding: false,
-    notes: ["Request renovation grant for library."],
-  },
-  {
-    id: "3",
-    name: "Mambilla Polytechnic",
-    level: "Tertiary",
-    ownership: "Public",
-    lga: "Sardauna",
-    address: "Km 3 Gembu-Bali Road, Gembu",
-    contactPerson: "Dr. Samuel Yerima",
-    phone: "0810 889 4432",
-    email: "registrar@mambillapoly.edu.ng",
-    enrollmentMale: 1100,
-    enrollmentFemale: 1050,
-    lastInspection: "2023-12-01",
-    status: "Pending",
-    boarding: true,
-    notes: ["Awaiting lab equipment certification."],
-  },
-  {
-    id: "4",
-    name: "Royal Crest Academy",
-    level: "Secondary",
-    ownership: "Private",
-    lga: "Karim Lamido",
-    address: "Plot 8 Government Reserve, Karim Lamido",
-    contactPerson: "Mr. Richard Tumba",
-    phone: "0803 998 1122",
-    email: "info@royalcrestacademy.com",
-    enrollmentMale: 360,
-    enrollmentFemale: 360,
-    lastInspection: "2024-05-18",
-    status: "Suspended",
-    boarding: true,
-    notes: ["Suspended for incomplete science labs."],
-  },
-];
+// Helper function to map Supabase data to School interface
+function mapSupabaseToSchool(supabaseData: any): School {
+  // Map accreditation_status to AccreditationStatus
+  let status: AccreditationStatus = "Pending";
+  const accStatus = supabaseData.accreditation_status || supabaseData.status;
+  if (accStatus === "Accredited" || accStatus === "accredited") status = "Accredited";
+  else if (accStatus === "Suspended" || accStatus === "suspended") status = "Suspended";
+  else status = "Pending";
+
+  // Parse notes from string or array
+  let notes: string[] = [];
+  if (supabaseData.notes) {
+    if (typeof supabaseData.notes === "string") {
+      notes = supabaseData.notes.split("\n").filter((n: string) => n.trim());
+    } else if (Array.isArray(supabaseData.notes)) {
+      notes = supabaseData.notes;
+    }
+  }
+
+  return {
+    id: supabaseData.id,
+    name: supabaseData.name || "",
+    level: (supabaseData.level || "Secondary") as SchoolLevel,
+    ownership: (supabaseData.ownership || "Public") as Ownership,
+    lga: supabaseData.lga || "Unknown",
+    address: supabaseData.address || "",
+    contactPerson: "N/A", // Not stored in DB
+    phone: supabaseData.contact_phone || undefined,
+    email: supabaseData.contact_email || undefined,
+    enrollmentMale: supabaseData.enrollment_male || 0,
+    enrollmentFemale: supabaseData.enrollment_female || 0,
+    lastInspection: supabaseData.last_inspection_date || undefined,
+    status,
+    boarding: supabaseData.boarding || false,
+    notes,
+  };
+}
 
 export default function AdminSchoolsPage() {
-  const [schools, setSchools] = useState<School[]>(initialSchools);
+  const [schools, setSchools] = useState<School[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [levelFilter, setLevelFilter] = useState<SchoolLevel | "">("");
   const [ownershipFilter, setOwnershipFilter] = useState<Ownership | "">("");
@@ -142,6 +113,52 @@ export default function AdminSchoolsPage() {
     enrollmentFemale: 0,
   });
   const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Fetch schools from Supabase
+  useEffect(() => {
+    async function fetchSchools() {
+      try {
+        setLoading(true);
+        setError(null);
+        const { data, error: fetchError } = await getAllSchools({
+          level: levelFilter || undefined,
+          ownership: ownershipFilter || undefined,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to School interface
+        const mappedSchools = (data || []).map((school: any) => mapSupabaseToSchool(school));
+        setSchools(mappedSchools);
+      } catch (err: any) {
+        console.error("Error fetching schools:", err);
+        setError(err.message || "Failed to load schools");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchSchools();
+  }, [levelFilter, ownershipFilter, searchTerm]);
+
+  const refreshData = async () => {
+    try {
+      const { data, error: fetchError } = await getAllSchools({
+        level: levelFilter || undefined,
+        ownership: ownershipFilter || undefined,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setSchools(data.map((school: any) => mapSupabaseToSchool(school)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const filteredSchools = useMemo(() => {
     return schools.filter((school) => {
@@ -171,23 +188,56 @@ export default function AdminSchoolsPage() {
     }
   };
 
-  const updateSchools = (ids: string[], updater: (school: School) => School) => {
-    setSchools((prev) =>
-      prev.map((school) => (ids.includes(school.id) ? updater(school) : school))
-    );
+  const handleStatusChange = async (ids: string[], status: AccreditationStatus) => {
+    for (const id of ids) {
+      try {
+        const school = schools.find((s) => s.id === id);
+        if (!school) continue;
+        
+        const { error } = await upsertSchool({
+          id,
+          name: school.name,
+          level: school.level,
+          ownership: school.ownership,
+          lga: school.lga,
+          accreditation_status: status,
+          status: status,
+        });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating school ${id}:`, err);
+        alert("Failed to update status");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleStatusChange = (ids: string[], status: AccreditationStatus) => {
-    updateSchools(ids, (school) => ({ ...school, status }));
-  };
-
-  const handleAddNote = (ids: string[]) => {
+  const handleAddNote = async (ids: string[]) => {
     const note = window.prompt("Add note:");
     if (!note) return;
-    updateSchools(ids, (school) => ({
-      ...school,
-      notes: [...school.notes, `${new Date().toLocaleString()}: ${note}`],
-    }));
+    for (const id of ids) {
+      try {
+        const school = schools.find((s) => s.id === id);
+        if (!school) continue;
+        const existingNotes = school.notes.join("\n");
+        const newNotes = existingNotes ? `${existingNotes}\n${new Date().toLocaleString()}: ${note}` : `${new Date().toLocaleString()}: ${note}`;
+        const { error } = await upsertSchool({
+          id,
+          name: school.name,
+          level: school.level,
+          ownership: school.ownership,
+          lga: school.lga,
+          notes: newNotes,
+        });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    await refreshData();
   };
 
   const handleExport = () => {
@@ -251,38 +301,48 @@ export default function AdminSchoolsPage() {
     setFormState((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSaveSchool = () => {
+  const handleSaveSchool = async () => {
     if (!formState.name || !formState.lga || !formState.level || !formState.ownership) {
       window.alert("Please fill in required fields.");
       return;
     }
 
-    if (isEditing && formState.id) {
-      setSchools((prev) =>
-        prev.map((school) => (school.id === formState.id ? (formState as School) : school))
-      );
-    } else {
-      const newSchool: School = {
-        id: `school-${Date.now()}`,
-        name: formState.name,
-        level: (formState.level as SchoolLevel) || "Secondary",
-        ownership: (formState.ownership as Ownership) || "Public",
-        lga: formState.lga,
-        address: formState.address || "",
-        contactPerson: formState.contactPerson || "N/A",
-        phone: formState.phone,
-        email: formState.email,
-        enrollmentMale: formState.enrollmentMale || 0,
-        enrollmentFemale: formState.enrollmentFemale || 0,
-        lastInspection: formState.lastInspection,
-        status: (formState.status as AccreditationStatus) || "Pending",
-        boarding: !!formState.boarding,
-        notes: formState.notes || [],
+    try {
+      setSaving(true);
+      
+      // Map UI form to Supabase format
+      const schoolData = {
+        id: isEditing ? formState.id : undefined,
+        name: formState.name!,
+        level: formState.level!,
+        ownership: formState.ownership!,
+        lga: formState.lga!,
+        address: formState.address || undefined,
+        contact_phone: formState.phone || undefined,
+        contact_email: formState.email || undefined,
+        enrollment_male: formState.enrollmentMale || 0,
+        enrollment_female: formState.enrollmentFemale || 0,
+        last_inspection_date: formState.lastInspection || undefined,
+        accreditation_status: formState.status || "Pending",
+        boarding: formState.boarding || false,
+        notes: formState.notes?.join("\n") || undefined,
+        status: formState.status || "Pending",
       };
-      setSchools((prev) => [newSchool, ...prev]);
-    }
 
-    closeAddDrawer();
+      const { data, error: saveError } = await upsertSchool(schoolData);
+
+      if (saveError) {
+        throw saveError;
+      }
+
+      closeAddDrawer();
+      await refreshData();
+    } catch (err: any) {
+      console.error("Error saving school:", err);
+      alert(err.message || "Failed to save school");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -782,8 +842,15 @@ export default function AdminSchoolsPage() {
                 <Button variant="ghost" onClick={closeAddDrawer}>
                   Cancel
                 </Button>
-                <Button onClick={handleSaveSchool}>
-                  {isEditing ? "Save changes" : "Add school"}
+                <Button onClick={handleSaveSchool} disabled={saving}>
+                  {saving ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    isEditing ? "Save changes" : "Add school"
+                  )}
                 </Button>
               </div>
             </div>

@@ -104,17 +104,113 @@ function LandSearchForm() {
 }
 
 function LandRegistrationForm() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [referenceId, setReferenceId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    setSubmitSuccess(false);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    
+    const registrationType = formData.get("registrationType") as string;
+    const plotNumber = formData.get("plotNumber") as string;
+    const location = formData.get("location") as string;
+    const ownerName = formData.get("ownerName") as string;
+    const description = formData.get("description") as string;
+
+    if (!registrationType || !ownerName) {
+      setError("Registration type and owner name are required");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        request_type: registrationType,
+        applicant_name: ownerName,
+        plot_number: plotNumber || null,
+        location_description: location || null,
+        notes: description || null,
+      };
+
+      const submitFormData = new FormData();
+      submitFormData.append("payload", JSON.stringify(payload));
+
+      const documents = formData.getAll("documents") as File[];
+      documents.forEach((doc) => {
+        if (doc.size > 0) {
+          submitFormData.append("documents", doc);
+        }
+      });
+
+      const response = await fetch("/api/land-services", {
+        method: "POST",
+        body: submitFormData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to submit registration");
+      }
+
+      setReferenceId(result.referenceId);
+      setSubmitSuccess(true);
+      form.reset();
+    } catch (err: any) {
+      setError(err.message || "Failed to submit registration. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (submitSuccess && referenceId) {
+    return (
+      <div className="text-center py-8">
+        <CheckCircle className="h-16 w-16 text-taraba-green mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Registration Submitted Successfully</h3>
+        <p className="text-gray-600 mb-4">Your land registration request has been received.</p>
+        <div className="bg-taraba-green/10 border border-taraba-green rounded-lg p-4 inline-block">
+          <p className="text-sm font-semibold text-gray-700 mb-1">Reference ID</p>
+          <p className="text-lg font-bold text-taraba-green">{referenceId}</p>
+        </div>
+        <Button
+          onClick={() => {
+            setSubmitSuccess(false);
+            setReferenceId(null);
+          }}
+          className="mt-4 bg-taraba-green hover:bg-taraba-green-dark"
+        >
+          Submit Another Request
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Land Registration</h2>
         <p className="text-gray-600">Register new land titles or update existing land records</p>
       </div>
       
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6">
         <div>
-          <Label htmlFor="registrationType">Registration Type</Label>
-          <Select id="registrationType" placeholder="Select type">
+          <Label htmlFor="registrationType">Registration Type <span className="text-red-500">*</span></Label>
+          <Select id="registrationType" name="registrationType" required>
+            <option value="">Select type</option>
             <option value="new">New Land Title</option>
             <option value="transfer">Transfer of Ownership</option>
             <option value="update">Update Existing Record</option>
@@ -123,33 +219,23 @@ function LandRegistrationForm() {
         
         <div>
           <Label htmlFor="plotNumber">Plot Number</Label>
-          <Input id="plotNumber" placeholder="Enter plot number" />
+          <Input id="plotNumber" name="plotNumber" placeholder="Enter plot number" />
         </div>
         
         <div>
           <Label htmlFor="location">Location</Label>
-          <Input id="location" placeholder="Enter location/address" />
+          <Input id="location" name="location" placeholder="Enter location/address" />
         </div>
         
         <div>
-          <Label htmlFor="area">Area (Square Meters)</Label>
-          <Input id="area" type="number" placeholder="Enter area" />
-        </div>
-        
-        <div>
-          <Label htmlFor="ownerName">Owner Name</Label>
-          <Input id="ownerName" placeholder="Enter owner name" />
-        </div>
-        
-        <div>
-          <Label htmlFor="ownerNIN">Owner NIN</Label>
-          <Input id="ownerNIN" placeholder="Enter National Identification Number" />
+          <Label htmlFor="ownerName">Owner Name <span className="text-red-500">*</span></Label>
+          <Input id="ownerName" name="ownerName" placeholder="Enter owner name" required />
         </div>
       </div>
       
       <div>
         <Label htmlFor="description">Description</Label>
-        <Textarea id="description" placeholder="Additional details about the land" rows={4} />
+        <Textarea id="description" name="description" placeholder="Additional details about the land" rows={4} />
       </div>
       
       <div>
@@ -157,30 +243,140 @@ function LandRegistrationForm() {
         <div className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
           <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
           <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
-          <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (Max 5MB)</p>
+          <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (Max 5MB per file)</p>
+          <input
+            type="file"
+            id="documents"
+            name="documents"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="mt-4 mx-auto"
+          />
         </div>
       </div>
 
-      <Button className="w-full md:w-auto bg-taraba-green hover:bg-taraba-green-dark">
-        <FileText className="h-4 w-4 mr-2" />
-        Submit Registration
+      <Button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full md:w-auto bg-taraba-green hover:bg-taraba-green-dark"
+      >
+        {isSubmitting ? "Submitting..." : (
+          <>
+            <FileText className="h-4 w-4 mr-2" />
+            Submit Registration
+          </>
+        )}
       </Button>
-    </div>
+    </form>
   );
 }
 
 function DocumentRequests() {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [referenceId, setReferenceId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    setSubmitSuccess(false);
+
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    
+    const documentType = formData.get("documentType") as string;
+    const applicantName = formData.get("applicantName") as string;
+    const plotNumber = formData.get("plotNumberDoc") as string;
+    const purpose = formData.get("purpose") as string;
+
+    if (!documentType || !applicantName) {
+      setError("Document type and applicant name are required");
+      setIsSubmitting(false);
+      return;
+    }
+
+    try {
+      const payload = {
+        request_type: `document_request_${documentType}`,
+        applicant_name: applicantName,
+        plot_number: plotNumber || null,
+        notes: purpose || null,
+      };
+
+      const submitFormData = new FormData();
+      submitFormData.append("payload", JSON.stringify(payload));
+
+      const documents = formData.getAll("documents") as File[];
+      documents.forEach((doc) => {
+        if (doc.size > 0) {
+          submitFormData.append("documents", doc);
+        }
+      });
+
+      const response = await fetch("/api/land-services", {
+        method: "POST",
+        body: submitFormData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to submit document request");
+      }
+
+      setReferenceId(result.referenceId);
+      setSubmitSuccess(true);
+      form.reset();
+    } catch (err: any) {
+      setError(err.message || "Failed to submit document request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (submitSuccess && referenceId) {
+    return (
+      <div className="text-center py-8">
+        <CheckCircle className="h-16 w-16 text-taraba-green mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-gray-900 mb-2">Request Submitted Successfully</h3>
+        <p className="text-gray-600 mb-4">Your document request has been received.</p>
+        <div className="bg-taraba-green/10 border border-taraba-green rounded-lg p-4 inline-block">
+          <p className="text-sm font-semibold text-gray-700 mb-1">Reference ID</p>
+          <p className="text-lg font-bold text-taraba-green">{referenceId}</p>
+        </div>
+        <Button
+          onClick={() => {
+            setSubmitSuccess(false);
+            setReferenceId(null);
+          }}
+          className="mt-4 bg-taraba-green hover:bg-taraba-green-dark"
+        >
+          Submit Another Request
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Document Requests</h2>
         <p className="text-gray-600">Request land documents and certificates</p>
       </div>
       
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-600">{error}</p>
+        </div>
+      )}
+      
       <div className="grid md:grid-cols-2 gap-6">
         <div>
-          <Label htmlFor="documentType">Document Type</Label>
-          <Select id="documentType" placeholder="Select document type">
+          <Label htmlFor="documentType">Document Type <span className="text-red-500">*</span></Label>
+          <Select id="documentType" name="documentType" required>
+            <option value="">Select document type</option>
             <option value="certificate">Certificate of Occupancy</option>
             <option value="title">Land Title Deed</option>
             <option value="survey">Survey Plan</option>
@@ -189,30 +385,51 @@ function DocumentRequests() {
         </div>
         
         <div>
+          <Label htmlFor="applicantName">Applicant Name <span className="text-red-500">*</span></Label>
+          <Input id="applicantName" name="applicantName" placeholder="Enter your full name" required />
+        </div>
+        
+        <div>
           <Label htmlFor="plotNumberDoc">Plot Number</Label>
-          <Input id="plotNumberDoc" placeholder="Enter plot number" />
+          <Input id="plotNumberDoc" name="plotNumberDoc" placeholder="Enter plot number" />
         </div>
         
         <div>
           <Label htmlFor="purpose">Purpose</Label>
-          <Input id="purpose" placeholder="Purpose of request" />
-        </div>
-        
-        <div>
-          <Label htmlFor="deliveryMethod">Delivery Method</Label>
-          <Select id="deliveryMethod" placeholder="Select delivery method">
-            <option value="pickup">Pick Up at Office</option>
-            <option value="email">Email</option>
-            <option value="postal">Postal Service</option>
-          </Select>
+          <Input id="purpose" name="purpose" placeholder="Purpose of request" />
         </div>
       </div>
 
-      <Button className="w-full md:w-auto bg-taraba-green hover:bg-taraba-green-dark">
-        <Download className="h-4 w-4 mr-2" />
-        Request Document
+      <div>
+        <Label htmlFor="documents">Supporting Documents (Optional)</Label>
+        <div className="mt-2 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+          <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600">Click to upload or drag and drop</p>
+          <p className="text-xs text-gray-500 mt-1">PDF, JPG, PNG (Max 5MB per file)</p>
+          <input
+            type="file"
+            id="documents"
+            name="documents"
+            multiple
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="mt-4 mx-auto"
+          />
+        </div>
+      </div>
+
+      <Button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full md:w-auto bg-taraba-green hover:bg-taraba-green-dark"
+      >
+        {isSubmitting ? "Submitting..." : (
+          <>
+            <Download className="h-4 w-4 mr-2" />
+            Request Document
+          </>
+        )}
       </Button>
-    </div>
+    </form>
   );
 }
 

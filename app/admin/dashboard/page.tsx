@@ -14,35 +14,43 @@ import {
   Clock,
   CheckCircle2,
   ArrowRight,
+  Loader2,
 } from "lucide-react";
+import Image from "next/image";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { getAllReports } from "@/lib/supabase/reports";
+import { getAllBirthRegistrations } from "@/lib/supabase/birth-registrations";
+import { getAllLandServices } from "@/lib/supabase/land-services";
+import { getAllDocumentVerifications } from "@/lib/supabase/document-verifications";
+import { getAllSocialServices } from "@/lib/supabase/social-services";
+import { getAllSchools } from "@/lib/supabase/schools";
+import { getAllHospitals } from "@/lib/supabase/hospitals";
 
-// Mock data - will be replaced with actual Supabase queries
-const mockStats = {
-  totalReports: 1247,
-  pendingReports: 43,
-  resolvedReports: 1156,
-  inProgressReports: 48,
-  totalBirthRegistrations: 892,
-  pendingBirthRegistrations: 28,
-  approvedBirthRegistrations: 812,
-  rejectedBirthRegistrations: 52,
-  totalLandServices: 456,
-  pendingLandServices: 12,
-  completedLandServices: 432,
-  totalTaxServices: 2341,
-  pendingTaxServices: 8,
-  totalTaxRevenue: 125000000,
-  totalSchoolRecords: 156,
-  totalHospitalRecords: 89,
-  totalDocumentVerifications: 678,
-  pendingDocumentVerifications: 15,
-  verifiedDocuments: 645,
-  totalSocialServices: 345,
-  pendingSocialServices: 7,
-  enrolledBeneficiaries: 312,
-};
+interface DashboardStats {
+  totalReports: number;
+  pendingReports: number;
+  resolvedReports: number;
+  inProgressReports: number;
+  totalBirthRegistrations: number;
+  pendingBirthRegistrations: number;
+  approvedBirthRegistrations: number;
+  rejectedBirthRegistrations: number;
+  totalLandServices: number;
+  pendingLandServices: number;
+  completedLandServices: number;
+  totalTaxServices: number;
+  pendingTaxServices: number;
+  totalTaxRevenue: number;
+  totalSchoolRecords: number;
+  totalHospitalRecords: number;
+  totalDocumentVerifications: number;
+  pendingDocumentVerifications: number;
+  verifiedDocuments: number;
+  totalSocialServices: number;
+  pendingSocialServices: number;
+  enrolledBeneficiaries: number;
+}
 
 const recentActivity = [
   {
@@ -121,12 +129,144 @@ const recentActivity = [
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [stats, setStats] = useState(mockStats);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalReports: 0,
+    pendingReports: 0,
+    resolvedReports: 0,
+    inProgressReports: 0,
+    totalBirthRegistrations: 0,
+    pendingBirthRegistrations: 0,
+    approvedBirthRegistrations: 0,
+    rejectedBirthRegistrations: 0,
+    totalLandServices: 0,
+    pendingLandServices: 0,
+    completedLandServices: 0,
+    totalTaxServices: 0,
+    pendingTaxServices: 0,
+    totalTaxRevenue: 0,
+    totalSchoolRecords: 0,
+    totalHospitalRecords: 0,
+    totalDocumentVerifications: 0,
+    pendingDocumentVerifications: 0,
+    verifiedDocuments: 0,
+    totalSocialServices: 0,
+    pendingSocialServices: 0,
+    enrolledBeneficiaries: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
-  // TODO: Fetch real data from Supabase
+  // Fetch real data from Supabase
   useEffect(() => {
-    // Fetch statistics from Supabase
-    // This will be implemented when we connect to the backend
+    async function fetchStats() {
+      try {
+        setLoading(true);
+
+        // Fetch all data in parallel
+        const [
+          reportsResult,
+          birthRegistrationsResult,
+          landServicesResult,
+          documentVerificationsResult,
+          socialServicesResult,
+          schoolsResult,
+          hospitalsResult,
+        ] = await Promise.all([
+          getAllReports(),
+          getAllBirthRegistrations(),
+          getAllLandServices(),
+          getAllDocumentVerifications(),
+          getAllSocialServices(),
+          getAllSchools(),
+          getAllHospitals(),
+        ]);
+
+        // Process Reports
+        const reports = reportsResult.data || [];
+        const totalReports = reports.length;
+        const pendingReports = reports.filter((r: any) => r.status === "pending").length;
+        const resolvedReports = reports.filter((r: any) => r.status === "resolved" || r.status === "closed").length;
+        const inProgressReports = reports.filter((r: any) => r.status === "in_progress").length;
+
+        // Process Birth Registrations
+        const birthRegistrations = birthRegistrationsResult.data || [];
+        const totalBirthRegistrations = birthRegistrations.length;
+        const pendingBirthRegistrations = birthRegistrations.filter(
+          (r: any) => r.status === "pending" || r.status === "pending_review"
+        ).length;
+        const approvedBirthRegistrations = birthRegistrations.filter(
+          (r: any) => r.status === "approved" || r.status === "completed"
+        ).length;
+        const rejectedBirthRegistrations = birthRegistrations.filter((r: any) => r.status === "rejected").length;
+
+        // Process Land Services
+        const landServices = landServicesResult.data || [];
+        const totalLandServices = landServices.length;
+        const pendingLandServices = landServices.filter((r: any) => r.status === "pending").length;
+        const completedLandServices = landServices.filter(
+          (r: any) => r.status === "completed" || r.status === "approved"
+        ).length;
+
+        // Process Document Verifications
+        const documentVerifications = documentVerificationsResult.data || [];
+        const totalDocumentVerifications = documentVerifications.length;
+        const pendingDocumentVerifications = documentVerifications.filter((r: any) => r.status === "pending").length;
+        const verifiedDocuments = documentVerifications.filter(
+          (r: any) => r.status === "verified" || r.status === "approved"
+        ).length;
+
+        // Process Social Services
+        const socialServices = socialServicesResult.data || [];
+        const totalSocialServices = socialServices.length;
+        const pendingSocialServices = socialServices.filter((r: any) => r.status === "pending").length;
+        const enrolledBeneficiaries = socialServices.filter(
+          (r: any) => r.status === "active" || r.status === "approved"
+        ).length;
+
+        // Process Schools
+        const schools = schoolsResult.data || [];
+        const totalSchoolRecords = schools.length;
+
+        // Process Hospitals
+        const hospitals = hospitalsResult.data || [];
+        const totalHospitalRecords = hospitals.length;
+
+        // Tax Services - placeholder (no tax services table yet)
+        const totalTaxServices = 0;
+        const pendingTaxServices = 0;
+        const totalTaxRevenue = 0;
+
+        setStats({
+          totalReports,
+          pendingReports,
+          resolvedReports,
+          inProgressReports,
+          totalBirthRegistrations,
+          pendingBirthRegistrations,
+          approvedBirthRegistrations,
+          rejectedBirthRegistrations,
+          totalLandServices,
+          pendingLandServices,
+          completedLandServices,
+          totalTaxServices,
+          pendingTaxServices,
+          totalTaxRevenue,
+          totalSchoolRecords,
+          totalHospitalRecords,
+          totalDocumentVerifications,
+          pendingDocumentVerifications,
+          verifiedDocuments,
+          totalSocialServices,
+          pendingSocialServices,
+          enrolledBeneficiaries,
+        });
+      } catch (error) {
+        console.error("Error fetching dashboard stats:", error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchStats();
   }, []);
 
   const overviewStats = [
@@ -240,6 +380,17 @@ export default function AdminDashboard() {
 
   const recentUpdates = recentActivity.slice(0, 5);
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading dashboard statistics...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -274,14 +425,22 @@ export default function AdminDashboard() {
               <Card
                 key={stat.title}
                 className="relative overflow-hidden border-0 shadow-lg cursor-pointer"
-                style={{
-                  backgroundImage: `url(${stat.image})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
                 onClick={() => router.push(stat.href)}
               >
-                <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/80" />
+                {stat.image && (
+                  <>
+                    <Image
+                      src={stat.image}
+                      alt={stat.title}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                      className="object-cover"
+                      loading="lazy"
+                      quality={80}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/60 to-black/80" />
+                  </>
+                )}
                 <div className="relative z-10">
                   <CardHeader className="pb-2 flex flex-row items-center justify-between text-white">
                     <CardTitle className="text-base font-semibold">{stat.title}</CardTitle>
@@ -342,14 +501,22 @@ export default function AdminDashboard() {
               <Card
                 key={service.title}
                 className="relative overflow-hidden border-0 shadow-lg cursor-pointer"
-                style={{
-                  backgroundImage: `url(${service.image})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
                 onClick={() => router.push(service.href)}
               >
-                <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/60 to-black/85" />
+                {service.image && (
+                  <>
+                    <Image
+                      src={service.image}
+                      alt={service.title}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 25vw"
+                      className="object-cover"
+                      loading="lazy"
+                      quality={80}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/60 to-black/85" />
+                  </>
+                )}
                 <CardContent className="relative z-10 text-white">
                   <div className="flex items-center justify-between mb-4">
                     <div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Calendar,
   CheckCircle2,
@@ -19,11 +19,20 @@ import {
   AlertTriangle,
   Clock,
   MapPin,
+  Loader2,
+  Settings,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  getAllSocialServices,
+  updateSocialService,
+  addSocialServiceNote,
+  getSocialServiceNotes,
+} from "@/lib/supabase/social-services";
 
 type ProgramType =
   | "Welfare Support"
@@ -82,98 +91,42 @@ const statusMeta: Record<
   },
 };
 
-const initialBeneficiaries: Beneficiary[] = [
-  {
-    id: "1",
-    reference: "SS-2024-001",
-    fullName: "Amina Mohammed",
-    phoneNumber: "0803 456 7890",
-    email: "amina.mohammed@example.com",
-    lga: "Jalingo",
-    address: "No. 15, Wukari Road, Jalingo",
-    programType: "Welfare Support",
-    status: "active",
-    enrolledAt: "2024-01-15T10:00:00Z",
-    lastReview: "2024-10-15T10:00:00Z",
-    nextReview: "2025-01-15T10:00:00Z",
-    notes: ["Regular beneficiary. Monthly support ongoing."],
-  },
-  {
-    id: "2",
-    reference: "SS-2024-002",
-    fullName: "John Tersoo",
-    phoneNumber: "0802 178 2214",
-    email: "john.tersoo@example.com",
-    lga: "Takum",
-    address: "Takum New Market Area",
-    programType: "Utility Assistance",
-    status: "active",
-    enrolledAt: "2024-03-20T14:30:00Z",
-    lastReview: "2024-09-20T14:30:00Z",
-    nextReview: "2024-12-20T14:30:00Z",
-    notes: ["Receiving water bill assistance."],
-  },
-  {
-    id: "3",
-    reference: "SS-2024-003",
-    fullName: "Fatima Usman",
-    phoneNumber: "0805 112 9988",
-    email: "fatima.usman@example.com",
-    lga: "Wukari",
-    address: "Wukari Central",
-    programType: "Elderly Care",
-    status: "pending",
-    enrolledAt: "2024-11-05T09:15:00Z",
-    notes: ["Application under review. Awaiting medical assessment."],
-  },
-  {
-    id: "4",
-    reference: "SS-2024-004",
-    fullName: "Ibrahim Sadiq",
-    phoneNumber: "0807 334 5566",
-    email: "ibrahim.sadiq@example.com",
-    lga: "Sardauna",
-    address: "Gembu Town",
-    programType: "Disability Support",
-    status: "active",
-    enrolledAt: "2024-02-10T11:00:00Z",
-    lastReview: "2024-08-10T11:00:00Z",
-    nextReview: "2025-02-10T11:00:00Z",
-    notes: ["Receiving monthly disability allowance."],
-  },
-  {
-    id: "5",
-    reference: "SS-2024-005",
-    fullName: "Ruth Terkuma",
-    phoneNumber: "0809 887 6655",
-    email: "ruth.terkuma@example.com",
-    lga: "Gassol",
-    address: "Mutum Biyu",
-    programType: "Women's Program",
-    status: "suspended",
-    enrolledAt: "2023-06-15T10:30:00Z",
-    lastReview: "2024-09-15T10:30:00Z",
-    notes: ["Suspended due to non-compliance with program requirements."],
-  },
-  {
-    id: "6",
-    reference: "SS-2024-006",
-    fullName: "Musa Danjuma",
-    phoneNumber: "0804 223 4455",
-    email: "musa.danjuma@example.com",
-    lga: "Karim Lamido",
-    address: "Karim Lamido Town",
-    programType: "Youth Empowerment",
-    status: "active",
-    enrolledAt: "2024-05-12T13:20:00Z",
-    lastReview: "2024-11-01T13:20:00Z",
-    nextReview: "2025-02-01T13:20:00Z",
-    notes: ["Participating in skills training program."],
-  },
-];
+// Helper function to map Supabase data to Beneficiary interface
+function mapSupabaseToBeneficiary(supabaseData: any, notes: any[] = []): Beneficiary {
+  // Map status
+  let status: EnrollmentStatus = "pending";
+  const dbStatus = supabaseData.status || "pending";
+  if (dbStatus === "pending") status = "pending";
+  else if (dbStatus === "active" || dbStatus === "approved") status = "active";
+  else if (dbStatus === "suspended" || dbStatus === "rejected") status = "suspended";
+
+  return {
+    id: supabaseData.id,
+    reference: supabaseData.reference_id || "",
+    fullName: supabaseData.applicant_name || "",
+    phoneNumber: supabaseData.applicant_phone || undefined,
+    email: supabaseData.applicant_email || undefined,
+    lga: supabaseData.lga || "Unknown",
+    address: supabaseData.address || undefined,
+    programType: (supabaseData.program_type || "Welfare Support") as ProgramType,
+    status,
+    enrolledAt: supabaseData.created_at || new Date().toISOString(),
+    lastReview: undefined,
+    nextReview: undefined,
+    notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+    documents: supabaseData.documents_urls || undefined,
+  };
+}
+
+type TabType = "enrollments" | "programs";
 
 export default function AdminSocialServicesPage() {
-  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>(initialBeneficiaries);
+  const [activeTab, setActiveTab] = useState<TabType>("enrollments");
+  
+  // Enrollments state
+  const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [programFilter, setProgramFilter] = useState<ProgramType | "">("");
   const [statusFilter, setStatusFilter] = useState<EnrollmentStatus | "">("");
@@ -185,6 +138,86 @@ export default function AdminSocialServicesPage() {
     programType: "Welfare Support",
     status: "pending",
   });
+  const [loadingNotes, setLoadingNotes] = useState<string | null>(null);
+  
+  // Programs state
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [programsLoading, setProgramsLoading] = useState(false);
+  const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
+  const [programForm, setProgramForm] = useState<any>({
+    name: "",
+    code: "",
+    description: "",
+    is_active: true,
+    requirements: "",
+    benefits: "",
+  });
+  const [editingProgramId, setEditingProgramId] = useState<string | null>(null);
+  
+
+  // Fetch beneficiaries from Supabase
+  useEffect(() => {
+    async function fetchBeneficiaries() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Map status filter to database status
+        let dbStatus: string | undefined = undefined;
+        if (statusFilter === "active") dbStatus = "active";
+        else if (statusFilter === "pending") dbStatus = "pending";
+        else if (statusFilter === "suspended") dbStatus = "suspended";
+
+        const { data, error: fetchError } = await getAllSocialServices({
+          status: dbStatus,
+          program_type: programFilter || undefined,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to Beneficiary interface
+        const mappedBeneficiaries = (data || []).map((ben: any) => mapSupabaseToBeneficiary(ben));
+        setBeneficiaries(mappedBeneficiaries);
+      } catch (err: any) {
+        console.error("Error fetching social services:", err);
+        setError(err.message || "Failed to load beneficiaries");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchBeneficiaries();
+  }, [statusFilter, programFilter, searchTerm]);
+
+  // Fetch programs (always called, but only fetches when needed)
+  useEffect(() => {
+    if (activeTab === "programs") {
+      fetchPrograms();
+    }
+  }, [activeTab]);
+
+  const refreshData = async () => {
+    try {
+      let dbStatus: string | undefined = undefined;
+      if (statusFilter === "active") dbStatus = "active";
+      else if (statusFilter === "pending") dbStatus = "pending";
+      else if (statusFilter === "suspended") dbStatus = "suspended";
+
+      const { data, error: fetchError } = await getAllSocialServices({
+        status: dbStatus,
+        program_type: programFilter || undefined,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setBeneficiaries(data.map((ben: any) => mapSupabaseToBeneficiary(ben)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const filteredBeneficiaries = useMemo(() => {
     return beneficiaries.filter((beneficiary) => {
@@ -216,29 +249,51 @@ export default function AdminSocialServicesPage() {
     }
   };
 
-  const handleStatusChange = (ids: string[], newStatus: EnrollmentStatus) => {
-    setBeneficiaries((prev) =>
-      prev.map((b) =>
-        ids.includes(b.id)
-          ? {
-              ...b,
-              status: newStatus,
-              lastReview: newStatus === "active" ? new Date().toISOString() : b.lastReview,
-            }
-          : b
-      )
-    );
-    setSelected([]);
-  };
+  const handleStatusChange = async (ids: string[], newStatus: EnrollmentStatus) => {
+    // Map UI status to DB status
+    let dbStatus = newStatus;
+    if (newStatus === "active") dbStatus = "active";
+    else if (newStatus === "pending") dbStatus = "pending";
+    else if (newStatus === "suspended") dbStatus = "suspended";
 
-  const handleAddNote = (ids: string[]) => {
-    const note = window.prompt("Enter note:");
-    if (note) {
-      setBeneficiaries((prev) =>
-        prev.map((b) => (ids.includes(b.id) ? { ...b, notes: [...b.notes, note] } : b))
-      );
+    for (const id of ids) {
+      try {
+        const { error } = await updateSocialService(id, { status: dbStatus });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating beneficiary ${id}:`, err);
+        alert("Failed to update status");
+        return;
+      }
     }
     setSelected([]);
+    await refreshData();
+  };
+
+  const handleAddNote = async (ids: string[]) => {
+    const note = window.prompt("Enter note:");
+    if (!note) return;
+    for (const id of ids) {
+      try {
+        const { error } = await addSocialServiceNote(id, note);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    if (activeBeneficiary && ids.includes(activeBeneficiary.id)) {
+      const { data: notes } = await getSocialServiceNotes(activeBeneficiary.id);
+      if (notes) {
+        setActiveBeneficiary({
+          ...activeBeneficiary,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    }
+    setSelected([]);
+    await refreshData();
   };
 
   const handleExport = () => {
@@ -348,6 +403,104 @@ export default function AdminSocialServicesPage() {
     });
   };
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading beneficiaries...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertTriangle className="h-5 w-5" />
+          <p className="font-semibold">Error loading beneficiaries</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const fetchPrograms = async () => {
+    setProgramsLoading(true);
+    try {
+      const response = await fetch("/api/social-programs?admin=true");
+      const result = await response.json();
+      if (result.data) {
+        setPrograms(result.data);
+      }
+    } catch (err) {
+      console.error("Error fetching programs:", err);
+    } finally {
+      setProgramsLoading(false);
+    }
+  };
+
+
+  const handleSaveProgram = async () => {
+    if (!programForm.name || !programForm.code) {
+      alert("Name and code are required");
+      return;
+    }
+
+    try {
+      const url = "/api/social-programs";
+      const method = editingProgramId ? "PUT" : "POST";
+      const body = editingProgramId
+        ? { id: editingProgramId, ...programForm }
+        : programForm;
+
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) throw new Error("Failed to save program");
+
+      await fetchPrograms();
+      setIsProgramModalOpen(false);
+      setProgramForm({
+        name: "",
+        code: "",
+        description: "",
+        is_active: true,
+        requirements: "",
+        benefits: "",
+      });
+      setEditingProgramId(null);
+    } catch (err) {
+      console.error("Error saving program:", err);
+      alert("Failed to save program");
+    }
+  };
+
+  const handleDeleteProgram = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this program?")) return;
+
+    try {
+      const response = await fetch(`/api/social-programs?id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error("Failed to delete program");
+
+      await fetchPrograms();
+    } catch (err) {
+      console.error("Error deleting program:", err);
+      alert("Failed to delete program");
+    }
+  };
+
+
   return (
     <>
       <div className="space-y-6">
@@ -358,13 +511,70 @@ export default function AdminSocialServicesPage() {
               Manage beneficiary enrollment and social welfare programs.
             </p>
           </div>
-          <Button onClick={() => openAddDrawer()} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            Enroll beneficiary
-          </Button>
+          {activeTab === "enrollments" && (
+            <Button onClick={() => openAddDrawer()} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              Enroll beneficiary
+            </Button>
+          )}
+          {activeTab === "programs" && (
+            <Button
+              onClick={() => {
+                setEditingProgramId(null);
+                setProgramForm({
+                  name: "",
+                  code: "",
+                  description: "",
+                  is_active: true,
+                  requirements: "",
+                  benefits: "",
+                });
+                setIsProgramModalOpen(true);
+              }}
+              className="flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Add Program
+            </Button>
+          )}
         </div>
 
-        <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
+        {/* Tabs */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab("enrollments")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "enrollments"
+                  ? "border-taraba-green text-taraba-green"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Enrollments
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab("programs")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "programs"
+                  ? "border-taraba-green text-taraba-green"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Programs
+              </div>
+            </button>
+          </nav>
+        </div>
+
+        {/* Enrollments Tab */}
+        {activeTab === "enrollments" && (
+          <>
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm space-y-4">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="relative md:col-span-2">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -465,7 +675,24 @@ export default function AdminSocialServicesPage() {
                     <tr
                       key={beneficiary.id}
                       className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => setActiveBeneficiary(beneficiary)}
+                      onClick={async () => {
+                        setActiveBeneficiary(beneficiary);
+                        // Fetch notes
+                        try {
+                          setLoadingNotes(beneficiary.id);
+                          const { data: notes, error: notesError } = await getSocialServiceNotes(beneficiary.id);
+                          if (!notesError && notes) {
+                            setActiveBeneficiary({
+                              ...beneficiary,
+                              notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+                            });
+                          }
+                        } catch (err) {
+                          console.error("Error fetching notes:", err);
+                        } finally {
+                          setLoadingNotes(null);
+                        }
+                      }}
                     >
                       <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
                         <input
@@ -533,7 +760,78 @@ export default function AdminSocialServicesPage() {
               No beneficiaries found for the selected filters.
             </div>
           )}
-        </div>
+          </div>
+          </>
+        )}
+
+        {/* Programs Tab */}
+        {activeTab === "programs" && (
+          <div className="space-y-6">
+            {programsLoading ? (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <Loader2 className="h-8 w-8 animate-spin text-taraba-green" />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      <tr>
+                        <th className="px-6 py-3">Name</th>
+                        <th className="px-6 py-3">Code</th>
+                        <th className="px-6 py-3">Description</th>
+                        <th className="px-6 py-3">Status</th>
+                        <th className="px-6 py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-sm">
+                      {programs.map((program) => (
+                        <tr key={program.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-3 font-medium text-gray-900">{program.name}</td>
+                          <td className="px-6 py-3 text-gray-600 font-mono">{program.code}</td>
+                          <td className="px-6 py-3 text-gray-600">{program.description || "—"}</td>
+                          <td className="px-6 py-3">
+                            <Badge
+                              className={program.is_active ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}
+                            >
+                              {program.is_active ? "Active" : "Inactive"}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-3">
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingProgramId(program.id);
+                                  setProgramForm(program);
+                                  setIsProgramModalOpen(true);
+                                }}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteProgram(program.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-red-600" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {programs.length === 0 && (
+                    <div className="p-10 text-center text-gray-500">No programs found.</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
       {/* Detail Drawer */}
@@ -835,6 +1133,95 @@ export default function AdminSocialServicesPage() {
                   {isEditing ? "Update" : "Enroll"} Beneficiary
                 </Button>
                 <Button variant="outline" onClick={closeAddDrawer}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Program Modal */}
+      {isProgramModalOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/40" onClick={() => setIsProgramModalOpen(false)} />
+          <div className="w-full max-w-2xl bg-white shadow-xl overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900">
+                {editingProgramId ? "Edit Program" : "Add Program"}
+              </h2>
+              <Button variant="ghost" size="sm" onClick={() => setIsProgramModalOpen(false)}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Program Name *</label>
+                <Input
+                  value={programForm.name}
+                  onChange={(e) => setProgramForm({ ...programForm, name: e.target.value })}
+                  placeholder="e.g., Pension Scheme"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Program Code *</label>
+                <Input
+                  value={programForm.code}
+                  onChange={(e) => setProgramForm({ ...programForm, code: e.target.value })}
+                  placeholder="e.g., pension"
+                  className="font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  className="w-full min-h-[100px] px-3 py-2 border border-gray-300 rounded-md"
+                  value={programForm.description}
+                  onChange={(e) => setProgramForm({ ...programForm, description: e.target.value })}
+                  placeholder="Program description..."
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Requirements</label>
+                <textarea
+                  className="w-full min-h-[100px] px-3 py-2 border border-gray-300 rounded-md"
+                  value={programForm.requirements}
+                  onChange={(e) => setProgramForm({ ...programForm, requirements: e.target.value })}
+                  placeholder="Eligibility requirements..."
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Benefits</label>
+                <textarea
+                  className="w-full min-h-[100px] px-3 py-2 border border-gray-300 rounded-md"
+                  value={programForm.benefits}
+                  onChange={(e) => setProgramForm({ ...programForm, benefits: e.target.value })}
+                  placeholder="Program benefits..."
+                />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={programForm.is_active}
+                    onChange={(e) => setProgramForm({ ...programForm, is_active: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Active</span>
+                </label>
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t">
+                <Button onClick={handleSaveProgram} className="flex-1">
+                  {editingProgramId ? "Update" : "Create"} Program
+                </Button>
+                <Button variant="outline" onClick={() => setIsProgramModalOpen(false)}>
                   Cancel
                 </Button>
               </div>

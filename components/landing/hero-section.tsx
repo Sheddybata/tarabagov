@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { WeatherWidget } from "./weather-widget";
 import { TimeWidget } from "./time-widget";
@@ -64,15 +65,26 @@ export function HeroSection() {
 
   const currentHero = heroSlides[currentSlide];
 
+  // Preload next slide image for smooth transitions
+  useEffect(() => {
+    const nextIndex = (currentSlide + 1) % heroSlides.length;
+    const nextImage = new window.Image();
+    nextImage.src = heroSlides[nextIndex].image;
+  }, [currentSlide]);
+
   return (
     <section className="relative h-[600px] md:h-[700px] overflow-hidden">
-      {/* Background Image */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-in-out"
-        style={{
-          backgroundImage: `url('${currentHero.image}')`,
-        }}
-      >
+      {/* Background Image - Optimized with Next.js Image */}
+      <div className="absolute inset-0">
+        <Image
+          src={currentHero.image}
+          alt={currentHero.title}
+          fill
+          priority
+          quality={90}
+          className="object-cover transition-opacity duration-1000 ease-in-out"
+          sizes="100vw"
+        />
         <div className="absolute inset-0 bg-black/40" />
       </div>
 

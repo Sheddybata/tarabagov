@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { 
   Search, 
   Building2, 
@@ -97,16 +98,23 @@ export function MDADirectory() {
               rel="noopener noreferrer"
               className="block group"
             >
-              <div
-                className="relative rounded-lg overflow-hidden h-full min-h-[280px] transition-all duration-300 hover:shadow-xl"
-                style={{
-                  backgroundImage: `url(${mda.image})`,
-                  backgroundSize: "cover",
-                  backgroundPosition: "center",
-                }}
-              >
-                {/* Dark Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80 group-hover:from-black/75 group-hover:via-black/65 group-hover:to-black/85 transition-all duration-300" />
+              <div className="relative rounded-lg overflow-hidden h-full min-h-[280px] transition-all duration-300 hover:shadow-xl">
+                {/* Optimized Background Image */}
+                {mda.image && (
+                  <>
+                    <Image
+                      src={mda.image}
+                      alt={mda.name}
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover"
+                      loading="lazy"
+                      quality={85}
+                    />
+                    {/* Dark Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80 group-hover:from-black/75 group-hover:via-black/65 group-hover:to-black/85 transition-all duration-300 z-0" />
+                  </>
+                )}
 
                 {/* Content */}
                 <div className="relative h-full flex flex-col p-6 z-10">

@@ -110,6 +110,22 @@ export function BirthRegistrationForm() {
     }
   };
 
+  // Helper function to split name into first, middle, last
+  const splitName = (fullName: string) => {
+    const parts = fullName.trim().split(/\s+/);
+    if (parts.length === 1) {
+      return { first: parts[0], middle: "", last: "" };
+    } else if (parts.length === 2) {
+      return { first: parts[0], middle: "", last: parts[1] };
+    } else {
+      return {
+        first: parts[0],
+        middle: parts.slice(1, -1).join(" "),
+        last: parts[parts.length - 1],
+      };
+    }
+  };
+
   const handleFormSubmit = async () => {
     console.log("handleFormSubmit called, currentStep:", currentStep);
     
@@ -131,37 +147,67 @@ export function BirthRegistrationForm() {
     setIsSubmitting(true);
 
     try {
-      // Generate reference ID once and store it
-      const refId = `BR-${Date.now().toString().slice(-8)}`;
-      setReferenceId(refId);
+      // Split names
+      const childName = splitName(data.childName);
+      const fatherName = splitName(data.fatherName);
+      const motherName = splitName(data.motherMaidenName);
+
+      // Prepare payload
+      const payload: any = {
+        child_first_name: childName.first,
+        child_last_name: childName.last || childName.first,
+        child_middle_name: childName.middle || null,
+        child_gender: data.gender,
+        date_of_birth: data.dateOfBirth,
+        place_of_birth: data.placeOfBirth,
+        father_first_name: fatherName.first,
+        father_last_name: fatherName.last || fatherName.first,
+        father_middle_name: fatherName.middle || null,
+        father_nationality: "Nigerian", // Default, can be made configurable
+        mother_first_name: motherName.first,
+        mother_last_name: motherName.last || motherName.first,
+        mother_middle_name: motherName.middle || null,
+        mother_nationality: "Nigerian", // Default, can be made configurable
+      };
+
+      // Handle birth location based on birth type
+      if (data.birthType === "Hospital") {
+        payload.hospital_name = data.birthLocation;
+        payload.hospital_address = data.birthLocation;
+      } else {
+        payload.home_address = data.birthLocation;
+      }
 
       // Create FormData for file upload
       const formData = new FormData();
-      formData.append("childName", data.childName);
-      formData.append("dateOfBirth", data.dateOfBirth);
-      formData.append("gender", data.gender);
-      formData.append("placeOfBirth", data.placeOfBirth);
-      formData.append("birthType", data.birthType);
-      formData.append("birthLocation", data.birthLocation);
-      formData.append("fatherName", data.fatherName);
-      formData.append("motherMaidenName", data.motherMaidenName);
-      formData.append("fatherNIN", data.fatherNIN);
-      formData.append("motherNIN", data.motherNIN);
-      formData.append("hospitalNotification", data.hospitalNotification[0]);
+      formData.append("payload", JSON.stringify(payload));
 
-      // TODO: Replace with actual API call to Supabase
-      console.log("Submitting birth registration:", {
-        referenceId: refId,
-        ...data,
+      if (data.hospitalNotification && data.hospitalNotification.length > 0) {
+        formData.append("hospitalNotification", data.hospitalNotification[0]);
+      }
+
+      // Submit to API
+      console.log("🔵 Submitting birth registration to /api/birth-registration");
+      const response = await fetch("/api/birth-registration", {
+        method: "POST",
+        body: formData,
       });
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      console.log("🔵 Response status:", response.status);
+      const result = await response.json();
+      console.log("🔵 Response data:", result);
 
+      if (!response.ok) {
+        console.error("🔴 API Error:", result);
+        throw new Error(result.error || result.details || "Failed to submit birth registration");
+      }
+
+      setReferenceId(result.referenceId);
       setSubmitSuccess(true);
       setIsSubmitting(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting registration:", error);
+      alert(error.message || "Failed to submit registration. Please try again.");
       setIsSubmitting(false);
       setReferenceId(null);
     }

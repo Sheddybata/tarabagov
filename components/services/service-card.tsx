@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { LucideIcon } from "lucide-react";
 import { Hand } from "lucide-react";
 
@@ -32,23 +33,25 @@ export function ServiceCard({
       className={`relative rounded-lg overflow-hidden h-full min-h-[280px] group transition-all duration-300 hover:shadow-xl ${
         image ? "" : `${color} border-2`
       }`}
-      style={
-        image
-          ? {
-              backgroundImage: `url(${image})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }
-          : {}
-      }
     >
-      {/* Dark Overlay for Image Background */}
+      {/* Optimized Background Image */}
       {image && (
-        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80 group-hover:from-black/75 group-hover:via-black/65 group-hover:to-black/85 transition-all duration-300" />
+        <>
+          <Image
+            src={image}
+            alt={title}
+            fill
+            sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            className="object-cover"
+            loading="lazy"
+            quality={85}
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-black/60 to-black/80 group-hover:from-black/75 group-hover:via-black/65 group-hover:to-black/85 transition-all duration-300 z-0" />
+        </>
       )}
 
       {/* Content */}
-      <div className="relative h-full flex flex-col p-6 z-10">
+      <div className={`relative h-full flex flex-col p-6 ${image ? "z-10" : ""}`}>
         {/* Icon */}
         <div
           className={`w-14 h-14 rounded-lg flex items-center justify-center mb-4 ${

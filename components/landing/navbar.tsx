@@ -51,12 +51,14 @@ export function Navbar() {
           </div>
 
           {/* Login Button */}
-          <Button 
-            className="bg-taraba-green hover:bg-taraba-green-light text-white"
-            size="sm"
-          >
-            Login
-          </Button>
+          <Link href="/admin/login">
+            <Button 
+              className="bg-taraba-green hover:bg-taraba-green-light text-white"
+              size="sm"
+            >
+              Login
+            </Button>
+          </Link>
         </div>
 
         {/* Mobile Menu */}

@@ -44,7 +44,7 @@ const services = [
     title: "TAGIS - Land Administration",
     description: "Access land services, cadastral mapping, and land registration through Taraba Geographic Information Service.",
     icon: Map,
-    href: "/tagis",
+    href: "https://www.tarabastategov.cloud/government/tagis",
     image: "/images/services/tagis-land.jpg",
     color: "bg-green-50 border-green-100",
     textColor: "text-green-600",

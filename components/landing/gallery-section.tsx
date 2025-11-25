@@ -42,15 +42,20 @@ export function GallerySection() {
       <div className="container mx-auto px-4">
         <h2 className="text-3xl font-bold text-gray-900 mb-8">Gallery</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {galleryImages.map((image) => (
+          {galleryImages.map((image, index) => (
             <div
               key={image.id}
               className="relative aspect-square rounded-lg overflow-hidden group cursor-pointer"
             >
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-10" />
-              <div
-                className="w-full h-full bg-cover bg-center transition-transform group-hover:scale-110"
-                style={{ backgroundImage: `url(${image.src})` }}
+              <Image
+                src={image.src}
+                alt={image.alt}
+                fill
+                sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                className="object-cover transition-transform group-hover:scale-110"
+                loading={index < 4 ? "eager" : "lazy"}
+                quality={85}
               />
             </div>
           ))}

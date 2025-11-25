@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Building2,
   Calendar,
@@ -16,11 +16,18 @@ import {
   Search,
   X,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  getAllLandServices,
+  updateLandService,
+  addLandServiceNote,
+  getLandServiceNotes,
+} from "@/lib/supabase/land-services";
 
 type LandRequestStatus =
   | "submitted"
@@ -77,79 +84,125 @@ const statusMap: Record<
   },
 };
 
-const initialRequests: LandRequest[] = [
-  {
-    id: "1",
-    reference: "LS-24001",
-    applicantName: "Rahman Yusuf",
-    contactPhone: "0802 178 2214",
-    contactEmail: "rahman.yusuf@example.com",
-    requestType: "Land Search",
-    plotNumber: "45/WK/2024",
-    location: "Wukari Road Layout",
-    lga: "Jalingo",
-    status: "submitted",
-    submittedAt: "2024-11-10T09:30:00Z",
-    supportingDocs: [{ name: "Previous title document" }],
-    notes: [],
-  },
-  {
-    id: "2",
-    reference: "LS-24002",
-    applicantName: "Favour Amos",
-    contactPhone: "0805 445 3322",
-    contactEmail: "favour.amos@example.com",
-    requestType: "Registration",
-    plotNumber: "12/GS/2023",
-    location: "Government Station Extension",
-    lga: "Gassol",
-    status: "in_review",
-    submittedAt: "2024-11-08T14:10:00Z",
-    assignedTo: "Engr. Nuhu Danladi",
-    supportingDocs: [
-      { name: "Survey Plan.pdf", url: "#" },
-      { name: "Proof of Ownership.pdf", url: "#" },
-    ],
-    notes: ["Awaiting confirmation from Survey & Mapping unit."],
-  },
-  {
-    id: "3",
-    reference: "LS-24003",
-    applicantName: "David Longkat",
-    contactPhone: "0803 889 4455",
-    contactEmail: "david.longkat@example.com",
-    requestType: "Document Request",
-    location: "Takum Main Layout",
-    lga: "Takum",
-    status: "awaiting_documents",
-    submittedAt: "2024-11-07T11:00:00Z",
-    supportingDocs: [],
-    notes: ["Need sworn affidavit due to missing original C of O."],
-  },
-  {
-    id: "4",
-    reference: "LS-24004",
-    applicantName: "Grace Bala",
-    contactPhone: "0810 778 3422",
-    contactEmail: "grace.bala@example.com",
-    requestType: "Registration",
-    plotNumber: "88/BM/2022",
-    location: "Bali Model Layout",
-    lga: "Bali",
-    status: "approved",
-    submittedAt: "2024-10-30T10:20:00Z",
-    supportingDocs: [{ name: "C of O.pdf", url: "#" }],
-    notes: ["Certificate issued 2024-11-05."],
-  },
-];
+// Helper function to map Supabase data to LandRequest interface
+function mapSupabaseToLandRequest(supabaseData: any, notes: any[] = []): LandRequest {
+  // Determine request type from request_type field
+  let requestType: LandServiceType = "Land Search";
+  if (supabaseData.request_type?.includes("registration") || supabaseData.request_type === "new" || supabaseData.request_type === "transfer" || supabaseData.request_type === "update") {
+    requestType = "Registration";
+  } else if (supabaseData.request_type?.includes("document")) {
+    requestType = "Document Request";
+  }
+
+  // Map status
+  let status: LandRequestStatus = "submitted";
+  const dbStatus = supabaseData.status || "pending";
+  if (dbStatus === "pending") status = "submitted";
+  else if (dbStatus === "in_progress" || dbStatus === "in_review") status = "in_review";
+  else if (dbStatus === "awaiting_documents") status = "awaiting_documents";
+  else if (dbStatus === "approved" || dbStatus === "resolved") status = "approved";
+  else if (dbStatus === "rejected") status = "rejected";
+
+  // Parse documents
+  const supportingDocs = (supabaseData.documents_urls || []).map((url: string) => ({
+    name: url.split("/").pop() || "Document",
+    url,
+  }));
+
+  return {
+    id: supabaseData.id,
+    reference: supabaseData.reference_id || "",
+    applicantName: supabaseData.applicant_name || "",
+    contactPhone: supabaseData.applicant_phone || undefined,
+    contactEmail: supabaseData.applicant_email || undefined,
+    requestType,
+    plotNumber: supabaseData.plot_number || undefined,
+    location: supabaseData.location_description || "",
+    lga: supabaseData.lga || "Unknown",
+    status,
+    submittedAt: supabaseData.created_at || new Date().toISOString(),
+    assignedTo: undefined,
+    supportingDocs,
+    notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+  };
+}
 
 export default function AdminLandServicesPage() {
-  const [requests, setRequests] = useState<LandRequest[]>(initialRequests);
+  const [requests, setRequests] = useState<LandRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<LandRequestStatus | "">("");
   const [typeFilter, setTypeFilter] = useState<LandServiceType | "">("");
   const [selected, setSelected] = useState<string[]>([]);
   const [activeRequest, setActiveRequest] = useState<LandRequest | null>(null);
+  const [loadingNotes, setLoadingNotes] = useState<string | null>(null);
+
+  // Fetch requests from Supabase
+  useEffect(() => {
+    async function fetchRequests() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Map status filter to database status
+        let dbStatus: string | undefined = undefined;
+        if (statusFilter === "submitted") dbStatus = "pending";
+        else if (statusFilter === "in_review") dbStatus = "in_progress";
+        else if (statusFilter) dbStatus = statusFilter;
+
+        // Map type filter to request_type
+        let requestType: string | undefined = undefined;
+        if (typeFilter === "Registration") requestType = "new";
+        else if (typeFilter === "Document Request") requestType = "document_request";
+
+        const { data, error: fetchError } = await getAllLandServices({
+          status: dbStatus,
+          request_type: requestType,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to LandRequest interface
+        const mappedRequests = (data || []).map((req: any) => mapSupabaseToLandRequest(req));
+        setRequests(mappedRequests);
+      } catch (err: any) {
+        console.error("Error fetching land services:", err);
+        setError(err.message || "Failed to load land service requests");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchRequests();
+  }, [statusFilter, typeFilter, searchTerm]);
+
+  const refreshData = async () => {
+    try {
+      let dbStatus: string | undefined = undefined;
+      if (statusFilter === "submitted") dbStatus = "pending";
+      else if (statusFilter === "in_review") dbStatus = "in_progress";
+      else if (statusFilter) dbStatus = statusFilter;
+
+      let requestType: string | undefined = undefined;
+      if (typeFilter === "Registration") requestType = "new";
+      else if (typeFilter === "Document Request") requestType = "document_request";
+
+      const { data, error: fetchError } = await getAllLandServices({
+        status: dbStatus,
+        request_type: requestType,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setRequests(data.map((req: any) => mapSupabaseToLandRequest(req)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const filteredRequests = useMemo(() => {
     return requests.filter((request) => {
@@ -178,45 +231,85 @@ export default function AdminLandServicesPage() {
     }
   };
 
-  const updateRequests = (ids: string[], updater: (request: LandRequest) => LandRequest) => {
-    setRequests((prev) =>
-      prev.map((request) => (ids.includes(request.id) ? updater(request) : request))
-    );
+  const handleAdvance = async (ids: string[]) => {
+    for (const id of ids) {
+      const request = requests.find((r) => r.id === id);
+      if (!request) continue;
+      const nextStatus = statusMap[request.status].next;
+      if (!nextStatus) continue;
+
+      // Map UI status to DB status
+      let dbStatus: string = nextStatus;
+      if (nextStatus === "submitted") dbStatus = "pending";
+      else if (nextStatus === "in_review") dbStatus = "in_progress";
+
+      try {
+        const { error } = await updateLandService(id, { status: dbStatus });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating land service ${id}:`, err);
+        alert("Failed to update status");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleAdvance = (ids: string[]) => {
-    updateRequests(ids, (req) => {
-      const nextStatus = statusMap[req.status].next;
-      if (!nextStatus) return req;
-      return { ...req, status: nextStatus };
-    });
-  };
-
-  const handleRequestDocs = (ids: string[]) => {
+  const handleRequestDocs = async (ids: string[]) => {
     const note = window.prompt("Describe the required document or information:");
-    updateRequests(ids, (req) => ({
-      ...req,
-      status: "awaiting_documents",
-      notes: note ? [...req.notes, `${new Date().toLocaleString()}: ${note}`] : req.notes,
-    }));
+    if (!note) return;
+    for (const id of ids) {
+      try {
+        await updateLandService(id, { status: "awaiting_documents" });
+        await addLandServiceNote(id, note);
+      } catch (err) {
+        console.error(`Error requesting docs for ${id}:`, err);
+        alert("Failed to request documents");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleReject = (ids: string[]) => {
+  const handleReject = async (ids: string[]) => {
     const note = window.prompt("Reason for rejection:");
-    updateRequests(ids, (req) => ({
-      ...req,
-      status: "rejected",
-      notes: note ? [...req.notes, `${new Date().toLocaleString()}: ${note}`] : req.notes,
-    }));
+    if (!note) return;
+    for (const id of ids) {
+      try {
+        await updateLandService(id, { status: "rejected", notes: note });
+        await addLandServiceNote(id, `Rejected: ${note}`);
+      } catch (err) {
+        console.error(`Error rejecting ${id}:`, err);
+        alert("Failed to reject request");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleAddNote = (ids: string[]) => {
+  const handleAddNote = async (ids: string[]) => {
     const note = window.prompt("Add note:");
     if (!note) return;
-    updateRequests(ids, (req) => ({
-      ...req,
-      notes: [...req.notes, `${new Date().toLocaleString()}: ${note}`],
-    }));
+    for (const id of ids) {
+      try {
+        const { error } = await addLandServiceNote(id, note);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    if (activeRequest && ids.includes(activeRequest.id)) {
+      const { data: notes } = await getLandServiceNotes(activeRequest.id);
+      if (notes) {
+        setActiveRequest({
+          ...activeRequest,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    }
+    await refreshData();
   };
 
   const handleExport = () => {
@@ -242,6 +335,32 @@ export default function AdminLandServicesPage() {
   };
 
   const disabled = selected.length === 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading land service requests...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertTriangle className="h-5 w-5" />
+          <p className="font-semibold">Error loading land service requests</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -361,7 +480,24 @@ export default function AdminLandServicesPage() {
                   <tr
                     key={request.id}
                     className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setActiveRequest(request)}
+                    onClick={async () => {
+                      setActiveRequest(request);
+                      // Fetch notes
+                      try {
+                        setLoadingNotes(request.id);
+                        const { data: notes, error: notesError } = await getLandServiceNotes(request.id);
+                        if (!notesError && notes) {
+                          setActiveRequest({
+                            ...request,
+                            notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+                          });
+                        }
+                      } catch (err) {
+                        console.error("Error fetching notes:", err);
+                      } finally {
+                        setLoadingNotes(null);
+                      }
+                    }}
                   >
                     <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
                       <input

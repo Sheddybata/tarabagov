@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Baby,
   Calendar,
@@ -15,11 +15,18 @@ import {
   ShieldCheck,
   AlertTriangle,
   X,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  getAllBirthRegistrations,
+  updateBirthRegistration,
+  addBirthRegistrationNote,
+  getBirthRegistrationNotes,
+} from "@/lib/supabase/birth-registrations";
 
 type RegistryStatus = "pending_review" | "awaiting_documents" | "approved" | "rejected";
 
@@ -68,75 +75,75 @@ const statusMeta: Record<
   },
 };
 
-const initialRegistrations: BirthRegistration[] = [
-  {
-    id: "1",
-    reference: "BR-102934",
-    childName: "Aisha Mohammed",
-    dateOfBirth: "2024-10-12",
-    gender: "Female",
-    birthType: "Hospital",
-    birthLocation: "Federal Medical Centre, Jalingo",
-    placeOfBirth: "Jalingo",
-    fatherName: "Mohammed Idris",
-    motherName: "Hauwa Ibrahim",
-    fatherNIN: "12345678901",
-    motherNIN: "10987654321",
-    contactEmail: "hauwa.ibrahim@example.com",
-    contactPhone: "0802 178 2214",
-    status: "pending_review",
-    submittedAt: "2024-11-08T09:15:00Z",
-    hospitalNotificationUrl: "#",
-    notes: [],
-  },
-  {
-    id: "2",
-    reference: "BR-102935",
-    childName: "David Longkat",
-    dateOfBirth: "2024-09-30",
-    gender: "Male",
-    birthType: "Home",
-    birthLocation: "No. 12, Wukari Road, Takum",
-    placeOfBirth: "Takum",
-    fatherName: "Longkat Uche",
-    motherName: "Rose Longkat",
-    fatherNIN: "22345678901",
-    motherNIN: "20987654321",
-    contactEmail: "rose.longkat@example.com",
-    contactPhone: "0803 456 7890",
-    status: "awaiting_documents",
-    submittedAt: "2024-11-06T11:40:00Z",
-    notes: ["Request proof of home birth from community health worker."],
-  },
-  {
-    id: "3",
-    reference: "BR-102936",
-    childName: "Grace Bala",
-    dateOfBirth: "2024-10-01",
-    gender: "Female",
-    birthType: "Hospital",
-    birthLocation: "General Hospital, Bali",
-    placeOfBirth: "Bali",
-    fatherName: "Bala Sunday",
-    motherName: "Miriam Bala",
-    fatherNIN: "32345678901",
-    motherNIN: "30987654321",
-    contactEmail: "miriam.bala@example.com",
-    contactPhone: "0805 112 9988",
-    status: "approved",
-    submittedAt: "2024-10-28T14:05:00Z",
-    hospitalNotificationUrl: "#",
-    notes: ["Certificate issued on 2024-11-01."],
-  },
-];
+// Helper function to map Supabase data to BirthRegistration interface
+function mapSupabaseToBirthRegistration(supabaseData: any, notes: any[] = []): BirthRegistration {
+  const childName = `${supabaseData.child_first_name || ""} ${supabaseData.child_middle_name || ""} ${supabaseData.child_last_name || ""}`.trim();
+  const fatherName = `${supabaseData.father_first_name || ""} ${supabaseData.father_middle_name || ""} ${supabaseData.father_last_name || ""}`.trim();
+  const motherName = `${supabaseData.mother_first_name || ""} ${supabaseData.mother_middle_name || ""} ${supabaseData.mother_last_name || ""}`.trim();
+  const birthType = supabaseData.hospital_name ? "Hospital" : "Home";
+  const birthLocation = supabaseData.hospital_name || supabaseData.home_address || "";
+
+  return {
+    id: supabaseData.id,
+    reference: supabaseData.reference_id || "",
+    childName,
+    dateOfBirth: supabaseData.date_of_birth || "",
+    gender: (supabaseData.child_gender || "Male") as "Male" | "Female",
+    birthType: birthType as "Hospital" | "Home",
+    birthLocation,
+    placeOfBirth: supabaseData.place_of_birth || "",
+    fatherName,
+    motherName,
+    fatherNIN: "", // Not stored in DB
+    motherNIN: "", // Not stored in DB
+    contactEmail: supabaseData.contact_email || undefined,
+    contactPhone: supabaseData.contact_phone || undefined,
+    status: (supabaseData.status === "pending" ? "pending_review" : (supabaseData.status || "pending_review")) as RegistryStatus,
+    submittedAt: supabaseData.created_at || new Date().toISOString(),
+    hospitalNotificationUrl: supabaseData.hospital_notification_url || undefined,
+    notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+  };
+}
 
 export default function AdminBirthRegistrationsPage() {
-  const [registrations, setRegistrations] = useState<BirthRegistration[]>(initialRegistrations);
+  const [registrations, setRegistrations] = useState<BirthRegistration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<RegistryStatus | "">("");
   const [birthTypeFilter, setBirthTypeFilter] = useState<"Hospital" | "Home" | "">("");
   const [selected, setSelected] = useState<string[]>([]);
   const [activeRegistration, setActiveRegistration] = useState<BirthRegistration | null>(null);
+  const [loadingNotes, setLoadingNotes] = useState<string | null>(null);
+
+  // Fetch registrations from Supabase
+  useEffect(() => {
+    async function fetchRegistrations() {
+      try {
+        setLoading(true);
+        setError(null);
+        const { data, error: fetchError } = await getAllBirthRegistrations({
+          status: statusFilter || undefined,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to BirthRegistration interface
+        const mappedRegistrations = (data || []).map((reg: any) => mapSupabaseToBirthRegistration(reg));
+        setRegistrations(mappedRegistrations);
+      } catch (err: any) {
+        console.error("Error fetching birth registrations:", err);
+        setError(err.message || "Failed to load birth registrations");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchRegistrations();
+  }, [statusFilter, searchTerm]);
 
   const filteredRegistrations = useMemo(() => {
     return registrations.filter((entry) => {
@@ -150,6 +157,20 @@ export default function AdminBirthRegistrationsPage() {
       return matchesSearch && matchesStatus && matchesBirthType;
     });
   }, [registrations, searchTerm, statusFilter, birthTypeFilter]);
+
+  const refreshData = async () => {
+    try {
+      const { data, error: fetchError } = await getAllBirthRegistrations({
+        status: statusFilter || undefined,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setRegistrations(data.map((reg: any) => mapSupabaseToBirthRegistration(reg)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const toggleSelect = (id: string) => {
     setSelected((prev) =>
@@ -165,32 +186,59 @@ export default function AdminBirthRegistrationsPage() {
     }
   };
 
-  const updateEntries = (ids: string[], updater: (entry: BirthRegistration) => BirthRegistration) => {
-    setRegistrations((prev) =>
-      prev.map((entry) => (ids.includes(entry.id) ? updater(entry) : entry))
-    );
+  const handleStatusChange = async (ids: string[], newStatus: RegistryStatus) => {
+    for (const id of ids) {
+      try {
+        const { error } = await updateBirthRegistration(id, { status: newStatus });
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating registration ${id}:`, err);
+        alert("Failed to update status");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleStatusChange = (ids: string[], newStatus: RegistryStatus) => {
-    updateEntries(ids, (entry) => ({ ...entry, status: newStatus }));
-  };
-
-  const handleRequestDocuments = (ids: string[]) => {
+  const handleRequestDocuments = async (ids: string[]) => {
     const note = window.prompt("Describe the missing documents or information:");
-    updateEntries(ids, (entry) => ({
-      ...entry,
-      status: "awaiting_documents",
-      notes: note ? [...entry.notes, `${new Date().toLocaleString()}: ${note}`] : entry.notes,
-    }));
+    if (!note) return;
+    for (const id of ids) {
+      try {
+        await updateBirthRegistration(id, { status: "awaiting_documents" });
+        await addBirthRegistrationNote(id, note);
+      } catch (err) {
+        console.error(`Error requesting documents for ${id}:`, err);
+        alert("Failed to request documents");
+        return;
+      }
+    }
+    await refreshData();
   };
 
-  const handleAddNote = (ids: string[]) => {
+  const handleAddNote = async (ids: string[]) => {
     const note = window.prompt("Add note:");
     if (!note) return;
-    updateEntries(ids, (entry) => ({
-      ...entry,
-      notes: [...entry.notes, `${new Date().toLocaleString()}: ${note}`],
-    }));
+    for (const id of ids) {
+      try {
+        const { error } = await addBirthRegistrationNote(id, note);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to registration ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    if (activeRegistration && ids.includes(activeRegistration.id)) {
+      const { data: notes } = await getBirthRegistrationNotes(activeRegistration.id);
+      if (notes) {
+        setActiveRegistration({
+          ...activeRegistration,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    }
+    await refreshData();
   };
 
   const handleExport = () => {
@@ -216,6 +264,32 @@ export default function AdminBirthRegistrationsPage() {
   };
 
   const selectedDisabled = selected.length === 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading birth registrations...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertTriangle className="h-5 w-5" />
+          <p className="font-semibold">Error loading birth registrations</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -334,7 +408,24 @@ export default function AdminBirthRegistrationsPage() {
                   <tr
                     key={entry.id}
                     className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => setActiveRegistration(entry)}
+                    onClick={async () => {
+                      setActiveRegistration(entry);
+                      // Fetch notes
+                      try {
+                        setLoadingNotes(entry.id);
+                        const { data: notes, error: notesError } = await getBirthRegistrationNotes(entry.id);
+                        if (!notesError && notes) {
+                          setActiveRegistration({
+                            ...entry,
+                            notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+                          });
+                        }
+                      } catch (err) {
+                        console.error("Error fetching notes:", err);
+                      } finally {
+                        setLoadingNotes(null);
+                      }
+                    }}
                   >
                     <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -354,8 +445,8 @@ export default function AdminBirthRegistrationsPage() {
                       {new Date(entry.dateOfBirth).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <Badge className={statusMeta[entry.status].className}>
-                        {statusMeta[entry.status].label}
+                      <Badge className={statusMeta[entry.status]?.className || "bg-gray-100 text-gray-800"}>
+                        {statusMeta[entry.status]?.label || entry.status}
                       </Badge>
                     </td>
                     <td className="px-6 py-4 text-gray-600">
@@ -363,12 +454,12 @@ export default function AdminBirthRegistrationsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
-                        {statusMeta[entry.status].next && (
+                        {statusMeta[entry.status]?.next && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() =>
-                              handleStatusChange([entry.id], statusMeta[entry.status].next!)
+                              handleStatusChange([entry.id], statusMeta[entry.status]!.next!)
                             }
                           >
                             <RefreshCcw className="mr-1 h-4 w-4" />
@@ -430,8 +521,8 @@ export default function AdminBirthRegistrationsPage() {
                   Submitted {new Date(activeRegistration.submittedAt).toLocaleString()}
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <Badge className={statusMeta[activeRegistration.status].className}>
-                    {statusMeta[activeRegistration.status].label}
+                  <Badge className={statusMeta[activeRegistration.status]?.className || "bg-gray-100 text-gray-800"}>
+                    {statusMeta[activeRegistration.status]?.label || activeRegistration.status}
                   </Badge>
                   <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
                     <MapPin className="h-3 w-3" />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   AlertCircle,
   Calendar,
@@ -16,11 +16,18 @@ import {
   XCircle,
   Clock,
   User,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  getAllDocumentVerifications,
+  updateDocumentVerification,
+  addDocumentVerificationNote,
+  getDocumentVerificationNotes,
+} from "@/lib/supabase/document-verifications";
 
 type DocumentType =
   | "Birth Certificate"
@@ -88,98 +95,53 @@ const statusMeta: Record<
   },
 };
 
-const initialVerifications: DocumentVerification[] = [
-  {
-    id: "1",
-    reference: "DV-2024-001",
-    documentType: "Birth Certificate",
-    applicantName: "Amina Mohammed",
-    phoneNumber: "0803 456 7890",
-    email: "amina.mohammed@example.com",
-    documentNumber: "BC/TS/2024/12345",
-    issuingAuthority: "National Population Commission",
-    issueDate: "2024-01-15",
-    status: "pending",
-    submittedAt: "2024-11-10T09:00:00Z",
-    notes: [],
-  },
-  {
-    id: "2",
-    reference: "DV-2024-002",
-    documentType: "Educational Certificate",
-    applicantName: "John Tersoo",
-    phoneNumber: "0802 178 2214",
-    email: "john.tersoo@example.com",
-    documentNumber: "WAEC/2020/567890",
-    issuingAuthority: "West African Examinations Council",
-    issueDate: "2020-08-20",
-    status: "in_review",
-    submittedAt: "2024-11-09T14:30:00Z",
-    notes: ["Document appears authentic. Cross-checking with WAEC database."],
-  },
-  {
-    id: "3",
-    reference: "DV-2024-003",
-    documentType: "Business Registration",
-    applicantName: "Fatima Usman",
-    phoneNumber: "0805 112 9988",
-    email: "fatima.usman@example.com",
-    documentNumber: "RC/TS/2023/789",
-    issuingAuthority: "Corporate Affairs Commission",
-    issueDate: "2023-06-10",
-    status: "verified",
-    submittedAt: "2024-11-08T10:15:00Z",
-    verifiedAt: "2024-11-09T16:20:00Z",
-    verifiedBy: "Admin User",
-    notes: ["Verified against CAC database. Document is authentic."],
-  },
-  {
-    id: "4",
-    reference: "DV-2024-004",
-    documentType: "Land Title",
-    applicantName: "Ibrahim Sadiq",
-    phoneNumber: "0807 334 5566",
-    email: "ibrahim.sadiq@example.com",
-    documentNumber: "LT/TS/2022/456",
-    issuingAuthority: "TAGIS - Taraba Geographic Information Service",
-    issueDate: "2022-03-15",
-    status: "rejected",
-    submittedAt: "2024-11-07T11:00:00Z",
-    rejectionReason: "Document number does not match records in TAGIS database.",
-    notes: ["Cross-referenced with TAGIS. Document number invalid."],
-  },
-  {
-    id: "5",
-    reference: "DV-2024-005",
-    documentType: "Marriage Certificate",
-    applicantName: "Ruth Terkuma",
-    phoneNumber: "0809 887 6655",
-    email: "ruth.terkuma@example.com",
-    documentNumber: "MC/TS/2019/234",
-    issuingAuthority: "Taraba State Ministry of Justice",
-    issueDate: "2019-12-05",
-    status: "pending",
-    submittedAt: "2024-11-10T08:45:00Z",
-    notes: [],
-  },
-  {
-    id: "6",
-    reference: "DV-2024-006",
-    documentType: "Tax Clearance",
-    applicantName: "Musa Danjuma",
-    phoneNumber: "0804 223 4455",
-    email: "musa.danjuma@example.com",
-    documentNumber: "TC/TS/2024/890",
-    issuingAuthority: "TSIRS - Taraba State Internal Revenue Service",
-    issueDate: "2024-09-30",
-    status: "in_review",
-    submittedAt: "2024-11-09T15:20:00Z",
-    notes: ["Verifying with TSIRS records."],
-  },
-];
+// Helper function to map Supabase data to DocumentVerification interface
+function mapSupabaseToDocumentVerification(supabaseData: any, notes: any[] = []): DocumentVerification {
+  // Map document_type to DocumentType
+  const docTypeMap: Record<string, DocumentType> = {
+    birth_certificate: "Birth Certificate",
+    educational_certificate: "Educational Certificate",
+    marriage_certificate: "Marriage Certificate",
+    death_certificate: "Death Certificate",
+    business_registration: "Business Registration",
+    land_title: "Land Title",
+    tax_clearance: "Tax Clearance",
+    identity_card: "Identity Document",
+  };
+  const documentType = docTypeMap[supabaseData.document_type] || "Birth Certificate";
+
+  // Map status
+  let status: VerificationStatus = "pending";
+  const dbStatus = supabaseData.status || "pending";
+  if (dbStatus === "pending") status = "pending";
+  else if (dbStatus === "in_review" || dbStatus === "in-review") status = "in_review";
+  else if (dbStatus === "verified") status = "verified";
+  else if (dbStatus === "rejected") status = "rejected";
+
+  return {
+    id: supabaseData.id,
+    reference: supabaseData.reference_id || "",
+    documentType,
+    applicantName: supabaseData.applicant_name || "",
+    phoneNumber: supabaseData.phone || undefined,
+    email: supabaseData.email || undefined,
+    documentNumber: supabaseData.document_number || undefined,
+    issuingAuthority: supabaseData.issuing_authority || undefined,
+    issueDate: supabaseData.issue_date || undefined,
+    status,
+    submittedAt: supabaseData.created_at || new Date().toISOString(),
+    verifiedAt: supabaseData.verified_at || undefined,
+    verifiedBy: undefined,
+    rejectionReason: supabaseData.rejection_reason || undefined,
+    uploadedDocumentUrl: supabaseData.attachment_urls?.[0] || undefined,
+    notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+  };
+}
 
 export default function AdminDocumentsPage() {
-  const [verifications, setVerifications] = useState<DocumentVerification[]>(initialVerifications);
+  const [verifications, setVerifications] = useState<DocumentVerification[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<DocumentType | "">("");
   const [statusFilter, setStatusFilter] = useState<VerificationStatus | "">("");
@@ -191,6 +153,87 @@ export default function AdminDocumentsPage() {
     documentType: "Birth Certificate",
     status: "pending",
   });
+  const [loadingNotes, setLoadingNotes] = useState<string | null>(null);
+
+  // Fetch verifications from Supabase
+  useEffect(() => {
+    async function fetchVerifications() {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Map document type filter to database type
+        const docTypeMap: Record<string, string> = {
+          "Birth Certificate": "birth_certificate",
+          "Educational Certificate": "educational_certificate",
+          "Marriage Certificate": "marriage_certificate",
+          "Death Certificate": "death_certificate",
+          "Business Registration": "business_registration",
+          "Land Title": "land_title",
+          "Tax Clearance": "tax_clearance",
+          "Identity Document": "identity_card",
+        };
+        const dbDocType = typeFilter ? docTypeMap[typeFilter] : undefined;
+
+        // Map status filter
+        let dbStatus: string | undefined = undefined;
+        if (statusFilter === "in_review") dbStatus = "in_review";
+        else if (statusFilter) dbStatus = statusFilter;
+
+        const { data, error: fetchError } = await getAllDocumentVerifications({
+          status: dbStatus,
+          document_type: dbDocType,
+          search: searchTerm || undefined,
+        });
+
+        if (fetchError) {
+          throw fetchError;
+        }
+
+        // Map Supabase data to DocumentVerification interface
+        const mappedVerifications = (data || []).map((ver: any) => mapSupabaseToDocumentVerification(ver));
+        setVerifications(mappedVerifications);
+      } catch (err: any) {
+        console.error("Error fetching document verifications:", err);
+        setError(err.message || "Failed to load document verifications");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchVerifications();
+  }, [statusFilter, typeFilter, searchTerm]);
+
+  const refreshData = async () => {
+    try {
+      const docTypeMap: Record<string, string> = {
+        "Birth Certificate": "birth_certificate",
+        "Educational Certificate": "educational_certificate",
+        "Marriage Certificate": "marriage_certificate",
+        "Death Certificate": "death_certificate",
+        "Business Registration": "business_registration",
+        "Land Title": "land_title",
+        "Tax Clearance": "tax_clearance",
+        "Identity Document": "identity_card",
+      };
+      const dbDocType = typeFilter ? docTypeMap[typeFilter] : undefined;
+
+      let dbStatus: string | undefined = undefined;
+      if (statusFilter === "in_review") dbStatus = "in_review";
+      else if (statusFilter) dbStatus = statusFilter;
+
+      const { data, error: fetchError } = await getAllDocumentVerifications({
+        status: dbStatus,
+        document_type: dbDocType,
+        search: searchTerm || undefined,
+      });
+      if (!fetchError && data) {
+        setVerifications(data.map((ver: any) => mapSupabaseToDocumentVerification(ver)));
+      }
+    } catch (err) {
+      console.error("Error refreshing data:", err);
+    }
+  };
 
   const filteredVerifications = useMemo(() => {
     return verifications.filter((verification) => {
@@ -222,30 +265,53 @@ export default function AdminDocumentsPage() {
     }
   };
 
-  const handleStatusChange = (ids: string[], newStatus: VerificationStatus) => {
-    setVerifications((prev) =>
-      prev.map((v) =>
-        ids.includes(v.id)
-          ? {
-              ...v,
-              status: newStatus,
-              verifiedAt: newStatus === "verified" ? new Date().toISOString() : v.verifiedAt,
-              verifiedBy: newStatus === "verified" ? "Admin User" : v.verifiedBy,
-            }
-          : v
-      )
-    );
-    setSelected([]);
-  };
+  const handleStatusChange = async (ids: string[], newStatus: VerificationStatus) => {
+    // Map UI status to DB status
+    let dbStatus = newStatus;
+    if (newStatus === "in_review") dbStatus = "in_review";
 
-  const handleAddNote = (ids: string[]) => {
-    const note = window.prompt("Enter note:");
-    if (note) {
-      setVerifications((prev) =>
-        prev.map((v) => (ids.includes(v.id) ? { ...v, notes: [...v.notes, note] } : v))
-      );
+    for (const id of ids) {
+      try {
+        const updates: any = { status: dbStatus };
+        if (newStatus === "verified") {
+          updates.verified_at = new Date().toISOString();
+        }
+        const { error } = await updateDocumentVerification(id, updates);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error updating verification ${id}:`, err);
+        alert("Failed to update status");
+        return;
+      }
     }
     setSelected([]);
+    await refreshData();
+  };
+
+  const handleAddNote = async (ids: string[]) => {
+    const note = window.prompt("Enter note:");
+    if (!note) return;
+    for (const id of ids) {
+      try {
+        const { error } = await addDocumentVerificationNote(id, note);
+        if (error) throw error;
+      } catch (err) {
+        console.error(`Error adding note to ${id}:`, err);
+        alert("Failed to add note");
+        return;
+      }
+    }
+    if (activeVerification && ids.includes(activeVerification.id)) {
+      const { data: notes } = await getDocumentVerificationNotes(activeVerification.id);
+      if (notes) {
+        setActiveVerification({
+          ...activeVerification,
+          notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+        });
+      }
+    }
+    setSelected([]);
+    await refreshData();
   };
 
   const handleExport = () => {
@@ -352,6 +418,32 @@ export default function AdminDocumentsPage() {
       minute: "2-digit",
     });
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-taraba-green mx-auto mb-4" />
+          <p className="text-gray-600">Loading document verifications...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 p-6">
+        <div className="flex items-center gap-2 text-red-800">
+          <AlertCircle className="h-5 w-5" />
+          <p className="font-semibold">Error loading document verifications</p>
+        </div>
+        <p className="mt-2 text-sm text-red-600">{error}</p>
+        <Button onClick={() => window.location.reload()} className="mt-4" variant="outline">
+          Retry
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -471,7 +563,24 @@ export default function AdminDocumentsPage() {
                     <tr
                       key={verification.id}
                       className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => setActiveVerification(verification)}
+                      onClick={async () => {
+                        setActiveVerification(verification);
+                        // Fetch notes
+                        try {
+                          setLoadingNotes(verification.id);
+                          const { data: notes, error: notesError } = await getDocumentVerificationNotes(verification.id);
+                          if (!notesError && notes) {
+                            setActiveVerification({
+                              ...verification,
+                              notes: notes.map((n: any) => `${new Date(n.created_at).toLocaleString()}: ${n.note}`),
+                            });
+                          }
+                        } catch (err) {
+                          console.error("Error fetching notes:", err);
+                        } finally {
+                          setLoadingNotes(null);
+                        }
+                      }}
                     >
                       <td className="px-6 py-3" onClick={(e) => e.stopPropagation()}>
                         <input
