@@ -466,6 +466,7 @@ export function ReportIssueForm() {
           {photoPreview ? (
             <div className="relative">
               <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photoPreview}
                   alt="Preview"

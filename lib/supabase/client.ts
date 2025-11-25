@@ -10,50 +10,19 @@ export function createClient() {
     // Return a minimal client that won't crash
     return createBrowserClient(
       'https://placeholder.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder',
-      {
-        cookies: {
-          getAll() {
-            return [];
-          },
-          setAll() {
-            // No-op
-          },
-        },
-      }
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder'
     );
   }
 
   try {
-    return createBrowserClient(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() {
-          if (typeof document === 'undefined') return [];
-          return document.cookie.split(';').map(cookie => {
-            const [name, ...rest] = cookie.split('=')
-            return { name: name.trim(), value: rest.join('=') }
-          })
-        },
-        setAll(cookiesToSet) {
-          if (typeof document === 'undefined') return;
-          cookiesToSet.forEach(({ name, value, options }) => {
-            document.cookie = `${name}=${value}; path=${options?.path || '/'}; max-age=${options?.maxAge || 3600 * 24 * 365}; SameSite=${options?.sameSite || 'Lax'}${options?.secure ? '; Secure' : ''}`
-          })
-        },
-      },
-    })
+    // createBrowserClient handles cookies automatically in the browser
+    return createBrowserClient(supabaseUrl, supabaseKey);
   } catch (error) {
     console.error("Error creating Supabase client:", error);
     // Return safe fallback
     return createBrowserClient(
       'https://placeholder.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder',
-      {
-        cookies: {
-          getAll() { return []; },
-          setAll() {},
-        },
-      }
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDUxOTIwMDAsImV4cCI6MTk2MDc2ODAwMH0.placeholder'
     );
   }
 }
