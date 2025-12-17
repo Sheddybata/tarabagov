@@ -53,8 +53,8 @@ export function GovernorProfile() {
               <div className="flex items-center gap-3 bg-gray-800/50 rounded-lg p-3">
                 <div className="relative h-12 w-12 flex-shrink-0 flex items-center justify-center">
                   <Image
-                    src="/images/governor/pdplogo(Nigeria).png"
-                    alt="PDP Logo"
+                    src="/images/governor/apclogo(Nigeria).png"
+                    alt="APC Logo"
                     width={48}
                     height={48}
                     className="object-contain w-full h-full"
@@ -63,7 +63,7 @@ export function GovernorProfile() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-xs text-gray-400">Party</p>
-                  <p className="text-white text-sm font-semibold truncate">PDP</p>
+                  <p className="text-white text-sm font-semibold truncate">APC</p>
                 </div>
               </div>
             </div>
