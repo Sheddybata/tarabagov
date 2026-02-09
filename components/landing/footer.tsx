@@ -66,16 +66,13 @@ export function Footer() {
 
           {/* Links Column */}
           <div>
-            <h3 className="font-bold text-lg mb-4">Links</h3>
+            <Link href="/" className="block mb-4">
+              <h3 className="font-bold text-lg hover:text-taraba-gold transition-colors cursor-pointer">Links</h3>
+            </Link>
             <ul className="space-y-2">
               <li>
-                <Link href="/about" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                <Link href="/#about" className="text-gray-400 hover:text-taraba-gold transition-colors">
                   About
-                </Link>
-              </li>
-              <li>
-                <Link href="/events" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Upcoming Events
                 </Link>
               </li>
               <li>
@@ -88,36 +85,43 @@ export function Footer() {
                   Contact
                 </Link>
               </li>
+              <li>
+                <Link href="/services" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Services
+                </Link>
+              </li>
             </ul>
           </div>
 
           {/* Departments Column */}
           <div>
-            <h3 className="font-bold text-lg mb-4">Departments</h3>
+            <Link href="/departments" className="block mb-4">
+              <h3 className="font-bold text-lg hover:text-taraba-gold transition-colors cursor-pointer">Departments</h3>
+            </Link>
             <ul className="space-y-2">
               <li>
-                <Link href="/departments/health" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Health
+                <Link href="/departments" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  All Departments
                 </Link>
               </li>
               <li>
-                <Link href="/departments/housing" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Housing & Land
+                <Link href="/hospitals" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Health Services
                 </Link>
               </li>
               <li>
-                <Link href="/departments/education" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                <Link href="/schools" className="text-gray-400 hover:text-taraba-gold transition-colors">
                   Education
                 </Link>
               </li>
               <li>
-                <Link href="/departments/transport" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Transport & Traffic
+                <Link href="/tagis" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Housing & Land
                 </Link>
               </li>
               <li>
-                <Link href="/departments/culture" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Arts & Culture
+                <Link href="/tsirs" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Tax Services
                 </Link>
               </li>
             </ul>
@@ -125,26 +129,28 @@ export function Footer() {
 
           {/* Explore Column */}
           <div>
-            <h3 className="font-bold text-lg mb-4">Explore</h3>
+            <Link href="/#about" className="block mb-4">
+              <h3 className="font-bold text-lg hover:text-taraba-gold transition-colors cursor-pointer">Explore</h3>
+            </Link>
             <ul className="space-y-2">
               <li>
-                <Link href="/history" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                <Link href="/#about" className="text-gray-400 hover:text-taraba-gold transition-colors">
                   History of Taraba
                 </Link>
               </li>
               <li>
-                <Link href="/culture" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                <Link href="/#about" className="text-gray-400 hover:text-taraba-gold transition-colors">
                   Culture & Heritage
                 </Link>
               </li>
               <li>
-                <Link href="/tourism" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Tourism
+                <Link href="/#gallery" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Gallery
                 </Link>
               </li>
               <li>
-                <Link href="/investment" className="text-gray-400 hover:text-taraba-gold transition-colors">
-                  Investment Opportunities
+                <Link href="/#services" className="text-gray-400 hover:text-taraba-gold transition-colors">
+                  Government Services
                 </Link>
               </li>
             </ul>
